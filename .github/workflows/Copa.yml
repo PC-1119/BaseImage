@@ -34,6 +34,12 @@ jobs:
           docker build -t app-image:$VERSION .
 
       # -----------------------------
+      # List Local Docker Images (debug)
+      # -----------------------------
+      - name: List Local Docker Images
+        run: docker images
+
+      # -----------------------------
       # Install Trivy dynamically
       # -----------------------------
       - name: Install Trivy
@@ -72,7 +78,7 @@ jobs:
 
           COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
           ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | \
-            jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
+            jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$") ) | .browser_download_url' | head -n 1)
           echo "Installing Copacetic $COPA_VERSION"
           echo "Asset URL: $ASSET_URL"
 
@@ -96,6 +102,12 @@ jobs:
             --image app-image:$VERSION \
             --report trivy-report.json \
             --tag patched-image:$VERSION
+
+      # -----------------------------
+      # List Docker Images After Patch (debug)
+      # -----------------------------
+      - name: List Docker Images After Patch
+        run: docker images
 
       # -----------------------------
       # Scan Patched Image
