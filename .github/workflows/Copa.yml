@@ -1,4 +1,4 @@
-name: Container Security Patch Pipeline
+name: Container Security Patch Pipeline (Semantic Versioning)
 
 on:
   workflow_dispatch:
@@ -16,23 +16,41 @@ jobs:
       # -----------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed to fetch all tags
 
       # -----------------------------
-      # Generate Docker Image Version (Docker-safe)
+      # Determine Latest Semantic Version
       # -----------------------------
-      - name: Generate Image Version
+      - name: Determine Latest Version
+        id: version
         run: |
-          # Safe Docker tag: digits and dash only
-          VERSION=$(date +%Y%m%d)-${{ github.run_number }}
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Image version: $VERSION"
+          git fetch --tags
+
+          # Get latest tag, default to v1.0 if none
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0")
+          echo "Latest tag: $LATEST_TAG"
+
+          # Strip 'v' prefix
+          VERSION_NUM=${LATEST_TAG#v}
+
+          # Split into major and minor
+          MAJOR=${VERSION_NUM%%.*}
+          MINOR=${VERSION_NUM##*.}
+
+          # Increment minor
+          MINOR=$((MINOR + 1))
+          NEW_VERSION="$MAJOR.$MINOR"
+
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "New image version: $NEW_VERSION"
 
       # -----------------------------
       # Build Docker Image (local)
       # -----------------------------
       - name: Build Docker Image
         run: |
-          docker build -t app-image:$VERSION .
+          docker build -t app-image:${{ env.NEW_VERSION }} .
 
       # -----------------------------
       # List Local Docker Images (debug)
@@ -64,7 +82,7 @@ jobs:
           trivy image \
             --format json \
             --output trivy-report.json \
-            app-image:$VERSION
+            app-image:${{ env.NEW_VERSION }}
 
       - name: Show Trivy Report
         run: cat trivy-report.json
@@ -102,9 +120,9 @@ jobs:
       - name: Patch Local Image
         run: |
           copa patch \
-            --image "docker-daemon://app-image:$VERSION" \
+            --image "docker-daemon://app-image:${{ env.NEW_VERSION }}" \
             --report trivy-report.json \
-            --tag "patched-image:$VERSION"
+            --tag "patched-image:${{ env.NEW_VERSION }}"
 
       # -----------------------------
       # List Docker Images After Patch (debug)
@@ -117,7 +135,7 @@ jobs:
       # -----------------------------
       - name: Scan Patched Image
         run: |
-          trivy image patched-image:$VERSION
+          trivy image patched-image:${{ env.NEW_VERSION }}
 
       # -----------------------------
       # Show Final Patched Image
@@ -125,4 +143,4 @@ jobs:
       - name: Show Final Image
         run: |
           echo "Patched image created:"
-          echo "patched-image:$VERSION"
+          echo "patched-image:${{ env.NEW_VERSION }}"
