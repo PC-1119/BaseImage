@@ -11,63 +11,92 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # -----------------------------
+      # --------------------------------
+      # Generate Image Version
+      # --------------------------------
+      - name: Generate Image Version
+        run: |
+          VERSION=$(date +%Y.%m.%d)-${{ github.run_number }}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Image version: $VERSION"
+
+      # --------------------------------
       # Build Docker Image
-      # -----------------------------
+      # --------------------------------
       - name: Build Docker Image
         run: |
-          docker build -t app-image:latest .
+          docker build -t app-image:$VERSION .
 
-      # -----------------------------
+      # --------------------------------
       # Install Trivy
-      # -----------------------------
+      # --------------------------------
       - name: Install Trivy
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget jq
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.0_Linux-64bit.deb
-          sudo dpkg -i trivy_0.50.0_Linux-64bit.deb
+          sudo apt-get install -y wget gnupg lsb-release jq
 
-      # -----------------------------
-      # Scan Image with Trivy
-      # -----------------------------
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
+          sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb stable main" | \
+          sudo tee /etc/apt/sources.list.d/trivy.list
+
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      # --------------------------------
+      # Scan Image
+      # --------------------------------
       - name: Run Trivy Scan
         run: |
           trivy image \
           --format json \
           --output trivy-report.json \
-          app-image:latest
+          app-image:$VERSION
 
       - name: Show Trivy Report
-        run: |
-          cat trivy-report.json
+        run: cat trivy-report.json
 
-      # -----------------------------
+      # --------------------------------
       # Install Copacetic
-      # -----------------------------
+      # --------------------------------
       - name: Install Copacetic
         run: |
           wget https://github.com/project-copacetic/copacetic/releases/latest/download/copacetic_Linux_x86_64.tar.gz
           tar -xvf copacetic_Linux_x86_64.tar.gz
           sudo mv copa /usr/local/bin/
+          copa version
 
-      # -----------------------------
-      # Patch Image Using Copacetic
-      # -----------------------------
-      - name: Patch Vulnerabilities
+      # --------------------------------
+      # Enable Docker BuildKit
+      # --------------------------------
+      - name: Enable BuildKit
+        run: echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
+
+      # --------------------------------
+      # Patch Image
+      # --------------------------------
+      - name: Patch Image
         run: |
           copa patch \
-          --image app-image:latest \
-          --report trivy-report.json \
-          --tag patched-image:latest
+            --image app-image:$VERSION \
+            --report trivy-report.json \
+            --tag patched-image:$VERSION
 
-      # -----------------------------
-      # Verify Patched Image
-      # -----------------------------
+      # --------------------------------
+      # Scan Patched Image
+      # --------------------------------
       - name: Scan Patched Image
         run: |
-          trivy image patched-image:latest
+          trivy image patched-image:$VERSION
+
+      # --------------------------------
+      # Show Final Image
+      # --------------------------------
+      - name: Show Final Image
+        run: |
+          echo "Patched image created:"
+          echo "patched-image:$VERSION"
