@@ -22,6 +22,7 @@ jobs:
       # -----------------------------
       - name: Generate Image Version
         run: |
+          # Safe Docker tag: digits and dash only
           VERSION=$(date +%Y%m%d)-${{ github.run_number }}
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Image version: $VERSION"
@@ -96,7 +97,7 @@ jobs:
           driver: docker-container
 
       # -----------------------------
-      # Patch Local Image
+      # Patch Local Image (docker-daemon)
       # -----------------------------
       - name: Patch Local Image
         run: |
