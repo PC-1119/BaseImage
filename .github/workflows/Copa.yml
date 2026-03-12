@@ -72,14 +72,14 @@ jobs:
 
           COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
           ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | \
-            jq -r '.assets[] | select(.name | test("linux.*amd64.*tar.gz")) | .browser_download_url')
+            jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
           echo "Installing Copacetic $COPA_VERSION"
           echo "Asset URL: $ASSET_URL"
 
           wget "$ASSET_URL" -O copacetic.tar.gz
           tar -xzf copacetic.tar.gz
-          sudo mv copacetic /usr/local/bin/
-          copacetic version
+          sudo mv copa /usr/local/bin/
+          copa version
 
       # -----------------------------
       # Enable Docker BuildKit (required for Copacetic)
@@ -92,7 +92,7 @@ jobs:
       # -----------------------------
       - name: Patch Image
         run: |
-          copacetic patch \
+          copa patch \
             --image app-image:$VERSION \
             --report trivy-report.json \
             --tag patched-image:$VERSION
