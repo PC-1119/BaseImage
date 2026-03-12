@@ -79,7 +79,7 @@ jobs:
           wget "$ASSET_URL" -O copacetic.tar.gz
           tar -xzf copacetic.tar.gz
           sudo mv copa /usr/local/bin/
-          copa version
+          copa --help
 
       # -----------------------------
       # Enable Docker BuildKit (required for Copacetic)
