@@ -41,7 +41,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y wget tar jq
 
-          # Get latest Trivy release tag dynamically
           TRIVY_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name)
           echo "Installing Trivy $TRIVY_VERSION"
 
@@ -64,21 +63,23 @@ jobs:
         run: cat trivy-report.json
 
       # -----------------------------
-      # Install Copacetic dynamically
+      # Install Copacetic dynamically (correct asset)
       # -----------------------------
       - name: Install Copacetic
         run: |
           sudo apt-get update
           sudo apt-get install -y wget tar jq
 
-          # Get latest Copacetic release tag dynamically
           COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
+          ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | \
+            jq -r '.assets[] | select(.name | test("linux.*amd64.*tar.gz")) | .browser_download_url')
           echo "Installing Copacetic $COPA_VERSION"
+          echo "Asset URL: $ASSET_URL"
 
-          wget https://github.com/project-copacetic/copacetic/releases/download/${COPA_VERSION}/copacetic_${COPA_VERSION#v}_Linux_x86_64.tar.gz
-          tar -xzf copacetic_${COPA_VERSION#v}_Linux_x86_64.tar.gz
-          sudo mv copa /usr/local/bin/
-          copa version
+          wget "$ASSET_URL" -O copacetic.tar.gz
+          tar -xzf copacetic.tar.gz
+          sudo mv copacetic /usr/local/bin/
+          copacetic version
 
       # -----------------------------
       # Enable Docker BuildKit (required for Copacetic)
@@ -91,7 +92,7 @@ jobs:
       # -----------------------------
       - name: Patch Image
         run: |
-          copa patch \
+          copacetic patch \
             --image app-image:$VERSION \
             --report trivy-report.json \
             --tag patched-image:$VERSION
