@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # --------------------------------
+      # Checkout repository
+      # --------------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
 
@@ -31,21 +34,21 @@ jobs:
           docker build -t app-image:$VERSION .
 
       # --------------------------------
-      # Install Trivy
+      # Install Trivy from official release
       # --------------------------------
       - name: Install Trivy
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget gnupg lsb-release jq
+          sudo apt-get install -y wget tar
 
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
-          sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+          TRIVY_VERSION=$(wget -qO- https://api.github.com/repos/aquasecurity/trivy/releases/latest | grep tag_name | cut -d '"' -f4)
+          echo "Installing Trivy $TRIVY_VERSION"
 
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb stable main" | \
-          sudo tee /etc/apt/sources.list.d/trivy.list
+          wget https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
+          tar -xzf trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
+          sudo mv trivy /usr/local/bin/
 
-          sudo apt-get update
-          sudo apt-get install -y trivy
+          trivy --version
 
       # --------------------------------
       # Scan Image
@@ -71,13 +74,13 @@ jobs:
           copa version
 
       # --------------------------------
-      # Enable Docker BuildKit
+      # Enable Docker BuildKit (required for Copacetic)
       # --------------------------------
       - name: Enable BuildKit
         run: echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
 
       # --------------------------------
-      # Patch Image
+      # Patch Image Vulnerabilities
       # --------------------------------
       - name: Patch Image
         run: |
