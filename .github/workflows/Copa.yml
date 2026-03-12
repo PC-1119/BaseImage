@@ -17,7 +17,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Needed to fetch all tags
+          fetch-depth: 0  # fetch all tags for versioning
 
       # -----------------------------
       # Determine Latest Semantic Version
@@ -26,22 +26,17 @@ jobs:
         id: version
         run: |
           git fetch --tags
-
-          # Get latest tag, default to v1.0 if none
+          # Default to v1.0 if no tags exist
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0")
           echo "Latest tag: $LATEST_TAG"
-
-          # Strip 'v' prefix
+          # Strip 'v'
           VERSION_NUM=${LATEST_TAG#v}
-
           # Split major.minor
           MAJOR=${VERSION_NUM%%.*}
           MINOR=${VERSION_NUM##*.}
-
           # Increment minor
           MINOR=$((MINOR + 1))
           NEW_VERSION="$MAJOR.$MINOR"
-
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
           echo "New image version: $NEW_VERSION"
 
@@ -53,7 +48,7 @@ jobs:
           docker build -t app-image:${{ env.NEW_VERSION }} .
 
       # -----------------------------
-      # List Local Docker Images (debug)
+      # List Local Docker Images
       # -----------------------------
       - name: List Local Docker Images
         run: docker images
@@ -65,10 +60,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget tar jq
-
           TRIVY_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name)
           echo "Installing Trivy $TRIVY_VERSION"
-
           wget https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
           tar -xzf trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
           sudo mv trivy /usr/local/bin/
@@ -94,20 +87,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget tar jq
-
           COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
           ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
             | jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
           echo "Installing Copacetic $COPA_VERSION"
           echo "Asset URL: $ASSET_URL"
-
           wget "$ASSET_URL" -O copacetic.tar.gz
           tar -xzf copacetic.tar.gz
           sudo mv copa /usr/local/bin/
           copa --help
 
       # -----------------------------
-      # Set up Docker Buildx (required for Copacetic)
+      # Set up Docker Buildx
       # -----------------------------
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -115,7 +106,7 @@ jobs:
           driver: docker-container
 
       # -----------------------------
-      # Patch Local Image (docker-daemon)
+      # Patch Local Image (no -patched in tag)
       # -----------------------------
       - name: Patch Local Image
         run: |
@@ -125,7 +116,7 @@ jobs:
             --tag "patched-image:${{ env.NEW_VERSION }}"
 
       # -----------------------------
-      # List Docker Images After Patch (debug)
+      # List Docker Images After Patch
       # -----------------------------
       - name: List Docker Images After Patch
         run: docker images
