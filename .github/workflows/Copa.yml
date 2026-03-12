@@ -82,10 +82,10 @@ jobs:
           copa --help
 
       # -----------------------------
-      # Enable Docker BuildKit (required for Copacetic)
+      # Set up BuildKit (required for Copacetic)
       # -----------------------------
-      - name: Enable BuildKit
-        run: echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
+      - name: Set up BuildKit
+        uses: moby/buildkit-action@v1
 
       # -----------------------------
       # Patch Image Vulnerabilities
