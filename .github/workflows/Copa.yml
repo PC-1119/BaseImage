@@ -12,7 +12,7 @@ jobs:
 
     steps:
       # -----------------------------
-      # Checkout Repository
+      # Checkout repository
       # -----------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -41,7 +41,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y wget tar jq
 
-          TRIVY_VERSION=$(wget -qO- https://api.github.com/repos/aquasecurity/trivy/releases/latest | grep tag_name | cut -d '"' -f4)
+          # Get latest Trivy release tag dynamically
+          TRIVY_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name)
           echo "Installing Trivy $TRIVY_VERSION"
 
           wget https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
@@ -68,10 +69,10 @@ jobs:
       - name: Install Copacetic
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget tar
+          sudo apt-get install -y wget tar jq
 
-          # Fetch latest Copacetic release dynamically
-          COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | grep tag_name | cut -d '"' -f4)
+          # Get latest Copacetic release tag dynamically
+          COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
           echo "Installing Copacetic $COPA_VERSION"
 
           wget https://github.com/project-copacetic/copacetic/releases/download/${COPA_VERSION}/copacetic_${COPA_VERSION#v}_Linux_x86_64.tar.gz
