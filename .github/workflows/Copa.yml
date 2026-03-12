@@ -1,0 +1,73 @@
+name: Container Security Patch Pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  scan-and-patch:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # -----------------------------
+      # Build Docker Image
+      # -----------------------------
+      - name: Build Docker Image
+        run: |
+          docker build -t app-image:latest .
+
+      # -----------------------------
+      # Install Trivy
+      # -----------------------------
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget jq
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.0_Linux-64bit.deb
+          sudo dpkg -i trivy_0.50.0_Linux-64bit.deb
+
+      # -----------------------------
+      # Scan Image with Trivy
+      # -----------------------------
+      - name: Run Trivy Scan
+        run: |
+          trivy image \
+          --format json \
+          --output trivy-report.json \
+          app-image:latest
+
+      - name: Show Trivy Report
+        run: |
+          cat trivy-report.json
+
+      # -----------------------------
+      # Install Copacetic
+      # -----------------------------
+      - name: Install Copacetic
+        run: |
+          wget https://github.com/project-copacetic/copacetic/releases/latest/download/copacetic_Linux_x86_64.tar.gz
+          tar -xvf copacetic_Linux_x86_64.tar.gz
+          sudo mv copa /usr/local/bin/
+
+      # -----------------------------
+      # Patch Image Using Copacetic
+      # -----------------------------
+      - name: Patch Vulnerabilities
+        run: |
+          copa patch \
+          --image app-image:latest \
+          --report trivy-report.json \
+          --tag patched-image:latest
+
+      # -----------------------------
+      # Verify Patched Image
+      # -----------------------------
+      - name: Scan Patched Image
+        run: |
+          trivy image patched-image:latest
