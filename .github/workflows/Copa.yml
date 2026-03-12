@@ -70,6 +70,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y wget tar
 
+          # Get latest release tag dynamically
           COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | grep tag_name | cut -d '"' -f4)
           echo "Installing Copacetic $COPA_VERSION"
 
