@@ -11,35 +11,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # --------------------------------
-      # Checkout repository
-      # --------------------------------
+      # -----------------------------
+      # Checkout Repository
+      # -----------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # --------------------------------
+      # -----------------------------
       # Generate Image Version
-      # --------------------------------
+      # -----------------------------
       - name: Generate Image Version
         run: |
           VERSION=$(date +%Y.%m.%d)-${{ github.run_number }}
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Image version: $VERSION"
 
-      # --------------------------------
+      # -----------------------------
       # Build Docker Image
-      # --------------------------------
+      # -----------------------------
       - name: Build Docker Image
         run: |
           docker build -t app-image:$VERSION .
 
-      # --------------------------------
-      # Install Trivy from official release
-      # --------------------------------
+      # -----------------------------
+      # Install Trivy dynamically
+      # -----------------------------
       - name: Install Trivy
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget tar
+          sudo apt-get install -y wget tar jq
 
           TRIVY_VERSION=$(wget -qO- https://api.github.com/repos/aquasecurity/trivy/releases/latest | grep tag_name | cut -d '"' -f4)
           echo "Installing Trivy $TRIVY_VERSION"
@@ -47,41 +47,46 @@ jobs:
           wget https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
           tar -xzf trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
           sudo mv trivy /usr/local/bin/
-
           trivy --version
 
-      # --------------------------------
-      # Scan Image
-      # --------------------------------
+      # -----------------------------
+      # Scan Docker Image
+      # -----------------------------
       - name: Run Trivy Scan
         run: |
           trivy image \
-          --format json \
-          --output trivy-report.json \
-          app-image:$VERSION
+            --format json \
+            --output trivy-report.json \
+            app-image:$VERSION
 
       - name: Show Trivy Report
         run: cat trivy-report.json
 
-      # --------------------------------
-      # Install Copacetic
-      # --------------------------------
+      # -----------------------------
+      # Install Copacetic dynamically
+      # -----------------------------
       - name: Install Copacetic
         run: |
-          wget https://github.com/project-copacetic/copacetic/releases/latest/download/copacetic_Linux_x86_64.tar.gz
-          tar -xvf copacetic_Linux_x86_64.tar.gz
+          sudo apt-get update
+          sudo apt-get install -y wget tar
+
+          COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | grep tag_name | cut -d '"' -f4)
+          echo "Installing Copacetic $COPA_VERSION"
+
+          wget https://github.com/project-copacetic/copacetic/releases/download/${COPA_VERSION}/copacetic_${COPA_VERSION#v}_Linux_x86_64.tar.gz
+          tar -xzf copacetic_${COPA_VERSION#v}_Linux_x86_64.tar.gz
           sudo mv copa /usr/local/bin/
           copa version
 
-      # --------------------------------
-      # Enable Docker BuildKit (required for Copacetic)
-      # --------------------------------
+      # -----------------------------
+      # Enable BuildKit (required for Copacetic)
+      # -----------------------------
       - name: Enable BuildKit
         run: echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
 
-      # --------------------------------
+      # -----------------------------
       # Patch Image Vulnerabilities
-      # --------------------------------
+      # -----------------------------
       - name: Patch Image
         run: |
           copa patch \
@@ -89,16 +94,16 @@ jobs:
             --report trivy-report.json \
             --tag patched-image:$VERSION
 
-      # --------------------------------
+      # -----------------------------
       # Scan Patched Image
-      # --------------------------------
+      # -----------------------------
       - name: Scan Patched Image
         run: |
           trivy image patched-image:$VERSION
 
-      # --------------------------------
-      # Show Final Image
-      # --------------------------------
+      # -----------------------------
+      # Show Final Image Version
+      # -----------------------------
       - name: Show Final Image
         run: |
           echo "Patched image created:"
