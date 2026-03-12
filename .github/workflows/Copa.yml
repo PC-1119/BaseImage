@@ -79,7 +79,7 @@ jobs:
           copa version
 
       # -----------------------------
-      # Enable BuildKit (required for Copacetic)
+      # Enable Docker BuildKit (required for Copacetic)
       # -----------------------------
       - name: Enable BuildKit
         run: echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
