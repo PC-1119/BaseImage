@@ -22,7 +22,7 @@ jobs:
       # -----------------------------
       - name: Generate Image Version
         run: |
-          VERSION=$(date +%Y-%m-%d)-${{ github.run_number }}
+          VERSION=$(date +%Y%m%d)-${{ github.run_number }}
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Image version: $VERSION"
 
@@ -96,7 +96,7 @@ jobs:
           driver: docker-container
 
       # -----------------------------
-      # Patch Image Vulnerabilities (local image)
+      # Patch Local Image
       # -----------------------------
       - name: Patch Local Image
         run: |
@@ -119,7 +119,7 @@ jobs:
           trivy image patched-image:$VERSION
 
       # -----------------------------
-      # Show Final Image Version
+      # Show Final Patched Image
       # -----------------------------
       - name: Show Final Image
         run: |
