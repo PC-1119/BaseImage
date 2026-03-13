@@ -3,7 +3,7 @@ name: Docker Security CI
 on:
   push:
     branches:
-      - main  # Trigger on push to any branch
+      - main
 
 jobs:
   trivy-scan-and-build:
@@ -17,10 +17,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Step 3: Build Docker image
+      # Step 3: Build Docker image locally and tag with docker.io prefix
       - name: Build Docker image
         run: |
-          docker buildx build --load -t pythonbaseimage:latest .
+          docker buildx build --load -t docker.io/local/pythonbaseimage:latest .
+          docker images | grep pythonbaseimage
+
+      # Step 3b: Get Docker socket path
+      - name: Get Docker socket path
+        run: |
+          url=$(docker context inspect | jq -r '.[0].Endpoints.docker.Host')
+          socket_path=$(echo "$url" | awk -F// '{print $2}')
+          echo "SOCKET=$socket_path" >> $GITHUB_ENV
+          echo "Using Docker socket at: $socket_path"
 
       # Step 4: Scan Docker image with Trivy
       - name: Generate Trivy Report
@@ -31,7 +40,7 @@ jobs:
           format: 'json'
           output: 'report.json'
           ignore-unfixed: true
-          image-ref: pythonbaseimage:latest
+          image-ref: docker.io/local/pythonbaseimage:latest
 
       # Step 5: Count vulnerabilities and set step output
       - name: Check for vulnerabilities
@@ -41,29 +50,21 @@ jobs:
           echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
           echo "Total vulnerabilities found: $VULN_COUNT"
 
-      # Step 6: Install Copacetic (copa binary)
-      - name: Install Copacetic
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget tar jq
-          COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
-          ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
-            | jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
-          echo "Installing Copacetic $COPA_VERSION"
-          echo "Asset URL: $ASSET_URL"
-          wget "$ASSET_URL" -O copacetic.tar.gz
-          tar -xzf copacetic.tar.gz
-          sudo mv copa /usr/local/bin/
-          copa --help
 
       # Step 7: Patch image with Copacetic if vulnerabilities exist
-      - name: Patch image with Copacetic
-        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
-        run: |
-          echo "Vulnerabilities detected. Patching image with Copacetic..."
-          copa patch --image docker://pythonbaseimage:latest --report report.json
+      - name: Run Copa action
+        id: copa
+        uses: project-copacetic/copa-action@v1.2.1
+        with:
+           image: "docker.io/local/pythonbaseimage:latest"
+           image-report: "report.json"
+           patched-tag: "patched"
+           timeout: 5m
+           custom-socket: ${SOCKET}
+           output: out.json
 
       # Step 8: Final image check
       - name: Final image check
         run: |
+          echo "Images after patching:"
           docker images | grep pythonbaseimage
