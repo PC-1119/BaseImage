@@ -1,0 +1,97 @@
+name: Docker Security Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  container-security-job:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout repository
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Convert repository name to lowercase
+      - name: Set lowercase repo name
+        id: repo
+        run: |
+          echo "repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      # Setup Docker Buildx
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Login to GHCR
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      # Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build -t ghcr.io/${{ steps.repo.outputs.repo }}/pythonbaseimage:latest .
+
+      # Push image to GHCR
+      - name: Push image to GHCR
+        run: |
+          docker push ghcr.io/${{ steps.repo.outputs.repo }}/pythonbaseimage:latest
+
+      # Verify image
+      - name: Verify image
+        run: docker images
+
+      # Scan image with Trivy
+      - name: Generate Trivy report
+        id: trivy_scan
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: 'image'
+          image-ref: ghcr.io/${{ steps.repo.outputs.repo }}/pythonbaseimage:latest
+          format: 'json'
+          output: 'report.json'
+          ignore-unfixed: true
+
+      # Count vulnerabilities
+      - name: Count vulnerabilities
+        id: check_vulns
+        run: |
+          VULN_COUNT=$(jq '[.Results[].Vulnerabilities[]?] | length' report.json)
+          echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
+          echo "Total vulnerabilities found: $VULN_COUNT"
+
+      # Install Copacetic
+      - name: Install Copacetic
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget tar jq
+          COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
+          ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
+            | jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
+          wget "$ASSET_URL" -O copacetic.tar.gz
+          tar -xzf copacetic.tar.gz
+          sudo mv copa /usr/local/bin/
+          copa --help
+
+      # Patch image with Copacetic
+      - name: Patch image with Copacetic
+        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
+        run: |
+          echo "Patching image with Copacetic..."
+          copa patch \
+            --image ghcr.io/${{ steps.repo.outputs.repo }}/pythonbaseimage:latest \
+            --report report.json \
+            --tag ghcr.io/${{ steps.repo.outputs.repo }}/pythonbaseimage:patched
+
+      # Push patched image
+      - name: Push patched image
+        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
+        run: |
+          docker push ghcr.io/${{ steps.repo.outputs.repo }}/pythonbaseimage:patched
+
+      # Final check
+      - name: Final image check
+        run: |
+          docker images
