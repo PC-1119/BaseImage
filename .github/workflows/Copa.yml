@@ -60,12 +60,12 @@ jobs:
       - name: Patch Docker image with debug
         run: |
           set -x
-          copa patch -i pythonbaseimage:latest \
-            -r trivy-report.json \
-            -t pythonbaseimage:patched \
-            -a unix:///var/run/docker.sock \
-            --timeout 5m \
-            --output out.json \
+          copa patch -i pythonbaseimage:latest
+            -r trivy-report.json
+            -t pythonbaseimage:patched
+            -a unix:///var/run/docker.sock
+            --timeout 5m
+            --output out.json
             --debug
 
       # Step 8: Debug info - show Copa output JSON
