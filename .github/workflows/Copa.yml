@@ -1,4 +1,4 @@
-name: Docker Security Patch CI
+name: Docker Security Patch CI with Podman
 
 on:
   push:
@@ -14,14 +14,24 @@ jobs:
       packages: write
 
     steps:
+      # Step 1: Checkout code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Build Docker image
+      # Step 2: Install Podman
+      - name: Install Podman
         run: |
-          docker build -t pythonbaseimage:latest .
-          docker images | grep pythonbaseimage
+          sudo apt-get update
+          sudo apt-get install -y podman slirp4netns fuse-overlayfs
+          podman --version
 
+      # Step 3: Build image using Podman
+      - name: Build Podman image
+        run: |
+          podman build -t pythonbaseimage:latest .
+          podman images | grep pythonbaseimage
+
+      # Step 4: Install Trivy
       - name: Install Trivy
         run: |
           sudo apt-get update
@@ -32,10 +42,12 @@ jobs:
           sudo apt-get install -y trivy
           trivy --version
 
+      # Step 5: Scan Podman image with Trivy
       - name: Generate Trivy Report
         run: |
           trivy image --vuln-type os --ignore-unfixed -f json -o trivy-report.json pythonbaseimage:latest
 
+      # Step 6: Install Copacetic
       - name: Install Copacetic
         run: |
           sudo apt-get install -y wget jq
@@ -47,19 +59,35 @@ jobs:
           sudo mv copa /usr/local/bin/
           copa --version
 
-      - name: Docker images before patch
-        run: docker images | grep pythonbaseimage
+      # Step 7: Debug - list Podman images before patch
+      - name: Debug: Podman images before patch
+        run: podman images | grep pythonbaseimage
 
-      # ✅ Correct Copa patch step on a single line
-      - name: Patch Docker image with debug
-        run: set -x && copa patch -i pythonbaseimage:latest -r trivy-report.json -t pythonbaseimage:patched -a unix:///var/run/docker.sock --timeout 5m --output out.json --debug
+      # Step 8: Patch Podman image using Copa
+      - name: Patch Podman image with debug
+        run: |
+          set -x
+          copa patch -i pythonbaseimage:latest \
+            -r trivy-report.json \
+            -t pythonbaseimage:patched \
+            --driver=podman \
+            --timeout 5m \
+            --output out.json \
+            --debug
 
-      - name: List Docker Images After Patch
-        run: docker images | grep pythonbaseimage
+      # Step 9: Debug info - show Copa output JSON
+      - name: Debug: Copa output
+        run: cat out.json | jq '.'
 
+      # Step 10: List Podman images after patch
+      - name: List Podman Images After Patch
+        run: podman images | grep pythonbaseimage
+
+      # Step 11: Scan patched image with Trivy
       - name: Scan Patched Image
         run: trivy image --vuln-type os --ignore-unfixed pythonbaseimage:patched
 
+      # Step 12: Show final output
       - name: Final Output
         run: |
           echo "Patched image created:"
