@@ -29,7 +29,7 @@ jobs:
       # Step 3: Build Docker image locally and tag with docker.io prefix
       - name: Build Docker image
         run: |
-          docker buildx build --load -t docker.io/local/pythonbaseimage:latest .
+          docker buildx build --load -t local/pythonbaseimage:latest .
           docker images | grep pythonbaseimage
 
       # Step 3b: Get Docker socket path
@@ -49,7 +49,7 @@ jobs:
           format: 'json'
           output: 'report.json'
           ignore-unfixed: true
-          image-ref: "docker://docker.io/local/pythonbaseimage:latest"
+          image-ref: "local/pythonbaseimage:latest"
 
       # Step 5: Count vulnerabilities and set step output
       - name: Check for vulnerabilities
@@ -64,9 +64,9 @@ jobs:
         id: copa
         uses: project-copacetic/copa-action@v1.2.1
         with:
-          image: "docker://docker.io/local/pythonbaseimage:latest"
+          image: "local/pythonbaseimage:latest"
           image-report: "report.json"
-          patched-tag: "docker.io/local/pythonbaseimage:patched"
+          patched-tag: "local/pythonbaseimage:patched"
           timeout: 5m
           custom-socket: ${SOCKET}
           output: out.json
