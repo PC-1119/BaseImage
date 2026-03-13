@@ -61,12 +61,12 @@ jobs:
         run: |
           set -x
           copa patch -i pythonbaseimage:latest \
-                     -r trivy-report.json \
-                     -t pythonbaseimage:patched \
-                     -a unix:///var/run/docker.sock \
-                     --timeout 5m \
-                     --output out.json \
-                     --debug
+            -r trivy-report.json \
+            -t pythonbaseimage:patched \
+            -a unix:///var/run/docker.sock \
+            --timeout 5m \
+            --output out.json \
+            --debug
 
       # Step 8: Debug info - show Copa output JSON
       - name: Debug: Copa output
