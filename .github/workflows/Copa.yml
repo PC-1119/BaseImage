@@ -14,17 +14,14 @@ jobs:
       packages: write
 
     steps:
-      # Step 1: Checkout code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Build Docker image
       - name: Build Docker image
         run: |
           docker build -t pythonbaseimage:latest .
           docker images | grep pythonbaseimage
 
-      # Step 3: Install Trivy
       - name: Install Trivy
         run: |
           sudo apt-get update
@@ -35,12 +32,10 @@ jobs:
           sudo apt-get install -y trivy
           trivy --version
 
-      # Step 4: Scan Docker image with Trivy and export JSON
       - name: Generate Trivy Report
         run: |
           trivy image --vuln-type os --ignore-unfixed -f json -o trivy-report.json pythonbaseimage:latest
 
-      # Step 5: Install Copacetic
       - name: Install Copacetic
         run: |
           sudo apt-get install -y wget jq
@@ -52,36 +47,19 @@ jobs:
           sudo mv copa /usr/local/bin/
           copa --version
 
-      # Step 6: Debug info - list Docker images before patch
-      - name: Debug: Docker images before patch
+      - name: Docker images before patch
         run: docker images | grep pythonbaseimage
 
-      # Step 7: Patch Docker image with Copa (with full debug)
+      # ✅ Correct Copa patch step on a single line
       - name: Patch Docker image with debug
-        run: |
-          set -x
-          copa patch -i pythonbaseimage:latest
-            -r trivy-report.json
-            -t pythonbaseimage:patched
-            -a unix:///var/run/docker.sock
-            --timeout 5m
-            --output out.json
-            --debug
+        run: set -x && copa patch -i pythonbaseimage:latest -r trivy-report.json -t pythonbaseimage:patched -a unix:///var/run/docker.sock --timeout 5m --output out.json --debug
 
-      # Step 8: Debug info - show Copa output JSON
-      - name: Debug: Copa output
-        run: |
-          cat out.json | jq '.'
-
-      # Step 9: List Docker images after patch
       - name: List Docker Images After Patch
         run: docker images | grep pythonbaseimage
 
-      # Step 10: Scan patched image with Trivy
       - name: Scan Patched Image
         run: trivy image --vuln-type os --ignore-unfixed pythonbaseimage:patched
 
-      # Step 11: Show final output
       - name: Final Output
         run: |
           echo "Patched image created:"
