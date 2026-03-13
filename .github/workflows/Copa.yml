@@ -49,7 +49,7 @@ jobs:
           format: 'json'
           output: 'report.json'
           ignore-unfixed: true
-          image-ref: docker.io/local/pythonbaseimage:latest
+          image-ref: "docker://docker.io/local/pythonbaseimage:latest"
 
       # Step 5: Count vulnerabilities and set step output
       - name: Check for vulnerabilities
@@ -64,7 +64,7 @@ jobs:
         id: copa
         uses: project-copacetic/copa-action@v1.2.1
         with:
-          image: "docker.io/local/pythonbaseimage:latest"
+          image: "docker://docker.io/local/pythonbaseimage:latest"
           image-report: "report.json"
           patched-tag: "docker.io/local/pythonbaseimage:patched"
           timeout: 5m
