@@ -31,7 +31,7 @@ jobs:
           podman build -t pythonbaseimage:latest .
           podman images | grep pythonbaseimage
 
-      # Step 4: Save Podman image to tar (for Trivy)
+      # Step 4: Save Podman image to tar (for Trivy scanning)
       - name: Save Podman image to tar
         run: |
           podman save -o pythonbaseimage.tar pythonbaseimage:latest
@@ -48,10 +48,10 @@ jobs:
           sudo apt-get install -y trivy
           trivy --version
 
-      # Step 6: Scan the image tar with Trivy
+      # Step 6: Scan the image tar with Trivy using --input
       - name: Scan Podman image tar with Trivy
         run: |
-          trivy image --vuln-type os --ignore-unfixed -f json -o trivy-report.json pythonbaseimage.tar
+          trivy image --input pythonbaseimage.tar --vuln-type os --ignore-unfixed -f json -o trivy-report.json
 
       # Step 7: Install Copacetic
       - name: Install Copacetic
