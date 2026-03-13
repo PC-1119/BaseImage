@@ -13,9 +13,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Set up Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      # Step 2: Set up Docker with containerd BuildKit
+      - name: Set up Docker (with containerd BuildKit)
+        uses: docker/setup-docker-action@v4
+        with:
+          daemon-config: |
+            {
+              "debug": true,
+              "experimental": true,
+              "features": {
+                "containerd-snapshotter": true
+              }
+            }
 
       # Step 3: Build Docker image locally and tag with docker.io prefix
       - name: Build Docker image
@@ -50,20 +59,19 @@ jobs:
           echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
           echo "Total vulnerabilities found: $VULN_COUNT"
 
-
-      # Step 7: Patch image with Copacetic if vulnerabilities exist
+      # Step 6: Patch image with Copacetic if vulnerabilities exist
       - name: Run Copa action
         id: copa
         uses: project-copacetic/copa-action@v1.2.1
         with:
-           image: "docker.io/local/pythonbaseimage:latest"
-           image-report: "report.json"
-           patched-tag: "patched"
-           timeout: 5m
-           custom-socket: ${SOCKET}
-           output: out.json
+          image: "docker.io/local/pythonbaseimage:latest"
+          image-report: "report.json"
+          patched-tag: "docker.io/local/pythonbaseimage:patched"
+          timeout: 5m
+          custom-socket: ${SOCKET}
+          output: out.json
 
-      # Step 8: Final image check
+      # Step 7: Final image check
       - name: Final image check
         run: |
           echo "Images after patching:"
