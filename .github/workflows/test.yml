@@ -37,7 +37,8 @@ jobs:
           tar -xzf copacetic.tar.gz
           sudo mv copa /usr/local/bin/
 
-          echo "==== Starting BuildKit (required for Copacetic) ===="
+          echo "==== Enabling BuildKit for Docker ===="
+          export DOCKER_BUILDKIT=1
           docker buildx create --use --name mybuilder
           docker buildx inspect --bootstrap
 
@@ -60,9 +61,9 @@ jobs:
           if [ "$VULN_COUNT" -ne 0 ]; then
             echo "==== Patching Image with Copacetic ===="
             copa patch \
-              --image docker.io/library/pythonbaseimage:latest \
+              --image docker-daemon:$IMAGE \
               --report report.json \
-              --tag pythonbaseimage:issokayy
+              --tag pythonbaseimage:patched
           else
             echo "==== No vulnerabilities found, skipping patch ===="
           fi
