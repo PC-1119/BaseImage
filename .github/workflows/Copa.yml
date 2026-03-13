@@ -1,4 +1,4 @@
-name: Container Security Patch Pipeline (Semantic Versioning)
+name: Container Security Patch Pipeline (Post-Patch Semantic Versioning)
 
 on:
   workflow_dispatch:
@@ -13,41 +13,25 @@ jobs:
     steps:
 
       # -----------------------------
-      # Checkout repository
+      # Checkout Repository
       # -----------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # fetch all tags for versioning
+          fetch-depth: 0  # fetch all tags
 
       # -----------------------------
-      # Determine Latest Semantic Version
-      # -----------------------------
-      - name: Determine Latest Version
-        id: version
-        run: |
-          git fetch --tags
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0")
-          VERSION_NUM=${LATEST_TAG#v}
-          MAJOR=$(echo $VERSION_NUM | cut -d. -f1)
-          MINOR=$(echo $VERSION_NUM | cut -d. -f2)
-          MINOR=$((MINOR + 1))
-          NEW_VERSION="$MAJOR.$MINOR"
-          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
-          echo "New Version: $NEW_VERSION"
-
-      # -----------------------------
-      # Build Docker Image
+      # Build Docker Image as 'myapp'
       # -----------------------------
       - name: Build Docker Image
         run: |
-          docker build -t app-image:${{ env.NEW_VERSION }} .
+          docker build -t myapp:latest .
 
       # -----------------------------
-      # List Local Images
+      # List Docker Images
       # -----------------------------
       - name: List Docker Images
-        run: docker images
+        run: docker images | grep myapp
 
       # -----------------------------
       # Install Trivy
@@ -63,16 +47,10 @@ jobs:
           trivy --version
 
       # -----------------------------
-      # Scan Original Image
+      # Scan Original Image with Trivy
       # -----------------------------
       - name: Scan Original Image
-        run: trivy image --format json --output trivy-report.json app-image:${{ env.NEW_VERSION }}
-
-      # -----------------------------
-      # Save Docker Image as Archive
-      # -----------------------------
-      - name: Save Image as Archive
-        run: docker save app-image:${{ env.NEW_VERSION }} -o image.tar
+        run: trivy image --format json --output trivy-report.json myapp:latest
 
       # -----------------------------
       # Install Copacetic
@@ -90,38 +68,55 @@ jobs:
           copa --help
 
       # -----------------------------
-      # Patch Docker Image (with --output)
+      # Patch Docker Image (local daemon)
       # -----------------------------
       - name: Patch Docker Image
         run: |
           copa patch \
-            --image docker-archive:./image.tar \
-            --report trivy-report.json \
-            --output docker-archive:./image-patched.tar \
-            --tag app-image:${{ env.NEW_VERSION }}
+            --image docker-daemon://myapp:latest \
+            --report trivy-report.json
 
       # -----------------------------
-      # Load Patched Image into Docker
-      # -----------------------------
-      - name: Load Patched Image
-        run: docker load -i ./image-patched.tar
-
-      # -----------------------------
-      # List Images After Patch
+      # List Docker Images After Patch
       # -----------------------------
       - name: List Docker Images After Patch
-        run: docker images
+        run: docker images | grep myapp
+
+      # -----------------------------
+      # Determine Semantic Version Post-Patch
+      # -----------------------------
+      - name: Determine Latest Version
+        id: version
+        run: |
+          git fetch --tags
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0")
+          VERSION_NUM=${LATEST_TAG#v}
+          MAJOR=$(echo $VERSION_NUM | cut -d. -f1)
+          MINOR=$(echo $VERSION_NUM | cut -d. -f2)
+          MINOR=$((MINOR + 1))
+          NEW_VERSION="$MAJOR.$MINOR"
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "New Version: $NEW_VERSION"
+
+      # -----------------------------
+      # Retag Patched Image with Semantic Version
+      # -----------------------------
+      - name: Retag Patched Image
+        run: |
+          # Copacetic usually creates 'myapp:latest-patched' by default
+          docker tag myapp:latest-patched myapp:${{ env.NEW_VERSION }}
+          docker images | grep myapp
 
       # -----------------------------
       # Scan Patched Image
       # -----------------------------
       - name: Scan Patched Image
-        run: trivy image app-image:${{ env.NEW_VERSION }}
+        run: trivy image myapp:${{ env.NEW_VERSION }}
 
       # -----------------------------
-      # Final Output
+      # Show Final Patched Image
       # -----------------------------
-      - name: Show Final Image
+      - name: Final Output
         run: |
           echo "Patched image created:"
-          echo "app-image:${{ env.NEW_VERSION }}"
+          echo "myapp:${{ env.NEW_VERSION }}"
