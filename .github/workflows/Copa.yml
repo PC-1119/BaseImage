@@ -1,4 +1,4 @@
-name: Container Security Patch Pipeline (Post-Patch Semantic Versioning)
+name: Container Security Patch Pipeline (Dockerfile + Copacetic)
 
 on:
   workflow_dispatch:
@@ -6,32 +6,19 @@ on:
     branches:
       - main
 
+env:
+  IMAGE_NAME: myapp  # Change this once and it applies everywhere
+
 jobs:
   scan-and-patch:
     runs-on: ubuntu-latest
 
     steps:
-
       # -----------------------------
-      # Checkout Repository
+      # Checkout repository
       # -----------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # fetch all tags
-
-      # -----------------------------
-      # Build Docker Image as 'myapp'
-      # -----------------------------
-      - name: Build Docker Image
-        run: |
-          docker build -t myapp:latest .
-
-      # -----------------------------
-      # List Docker Images
-      # -----------------------------
-      - name: List Docker Images
-        run: docker images | grep myapp
 
       # -----------------------------
       # Install Trivy
@@ -47,10 +34,11 @@ jobs:
           trivy --version
 
       # -----------------------------
-      # Scan Original Image with Trivy
+      # Scan Dockerfile directly
       # -----------------------------
-      - name: Scan Original Image
-        run: trivy image --format json --output trivy-report.json myapp:latest
+      - name: Scan Dockerfile
+        run: |
+          trivy image --dockerfile Dockerfile --context . --format json --output trivy-report.json
 
       # -----------------------------
       # Install Copacetic
@@ -68,26 +56,11 @@ jobs:
           copa --help
 
       # -----------------------------
-      # Patch Docker Image (local daemon)
+      # Patch Dockerfile and Build Image
       # -----------------------------
-      - name: Patch Docker Image
+      - name: Build & Patch Docker Image
         run: |
-          copa patch \
-            --image docker-daemon://myapp:latest \
-            --report trivy-report.json
-
-      # -----------------------------
-      # List Docker Images After Patch
-      # -----------------------------
-      - name: List Docker Images After Patch
-        run: docker images | grep myapp
-
-      # -----------------------------
-      # Determine Semantic Version Post-Patch
-      # -----------------------------
-      - name: Determine Latest Version
-        id: version
-        run: |
+          # Set semantic version
           git fetch --tags
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0")
           VERSION_NUM=${LATEST_TAG#v}
@@ -95,28 +68,30 @@ jobs:
           MINOR=$(echo $VERSION_NUM | cut -d. -f2)
           MINOR=$((MINOR + 1))
           NEW_VERSION="$MAJOR.$MINOR"
-          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
-          echo "New Version: $NEW_VERSION"
+          echo "NEW_VERSION=$NEW_VERSION"
+
+          # Build and patch image in one step
+          copa patch \
+            --dockerfile Dockerfile \
+            --context . \
+            --report trivy-report.json \
+            --tag $IMAGE_NAME:$NEW_VERSION
 
       # -----------------------------
-      # Retag Patched Image with Semantic Version
+      # Verify Patched Image
       # -----------------------------
-      - name: Retag Patched Image
-        run: |
-          # Copacetic usually creates 'myapp:latest-patched' by default
-          docker tag myapp:latest-patched myapp:${{ env.NEW_VERSION }}
-          docker images | grep myapp
+      - name: List Patched Image
+        run: docker images | grep $IMAGE_NAME
 
       # -----------------------------
       # Scan Patched Image
       # -----------------------------
       - name: Scan Patched Image
-        run: trivy image myapp:${{ env.NEW_VERSION }}
+        run: trivy image $IMAGE_NAME:$NEW_VERSION
 
       # -----------------------------
-      # Show Final Patched Image
+      # Final Output
       # -----------------------------
       - name: Final Output
         run: |
-          echo "Patched image created:"
-          echo "myapp:${{ env.NEW_VERSION }}"
+          echo "Patched image created: $IMAGE_NAME:$NEW_VERSION"
