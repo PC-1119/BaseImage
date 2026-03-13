@@ -66,8 +66,10 @@ jobs:
         wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
           gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
 
-        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | \
-          sudo tee /etc/apt/sources.list.d/trivy.list
+        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] \
+        https://aquasecurity.github.io/trivy-repo/deb \
+        $(lsb_release -sc) main" | \
+        sudo tee /etc/apt/sources.list.d/trivy.list
 
         sudo apt-get update
         sudo apt-get install -y trivy
@@ -88,7 +90,7 @@ jobs:
       run: cat trivy-report.json
 
     # -----------------------------
-    # Save Image as OCI Archive
+    # Save Image as Docker Archive
     # -----------------------------
     - name: Save Image
       run: |
@@ -132,14 +134,14 @@ jobs:
     - name: Patch Docker Image
       run: |
         copa patch \
-          --image oci-archive:image.tar \
+          --image docker-archive:image.tar \
           --report trivy-report.json \
           --tag patched-image:${{ env.NEW_VERSION }}
 
     # -----------------------------
-    # Load Patched Image
+    # Show Images After Patch
     # -----------------------------
-    - name: Load Patched Image
+    - name: List Images After Patch
       run: docker images
 
     # -----------------------------
@@ -150,7 +152,7 @@ jobs:
         trivy image patched-image:${{ env.NEW_VERSION }}
 
     # -----------------------------
-    # Show Final Image
+    # Final Output
     # -----------------------------
     - name: Final Output
       run: |
