@@ -31,7 +31,13 @@ jobs:
           podman build -t pythonbaseimage:latest .
           podman images | grep pythonbaseimage
 
-      # Step 4: Install Trivy
+      # Step 4: Save Podman image to tar (for Trivy)
+      - name: Save Podman image to tar
+        run: |
+          podman save -o pythonbaseimage.tar pythonbaseimage:latest
+          ls -lh pythonbaseimage.tar
+
+      # Step 5: Install Trivy
       - name: Install Trivy
         run: |
           sudo apt-get update
@@ -42,12 +48,12 @@ jobs:
           sudo apt-get install -y trivy
           trivy --version
 
-      # Step 5: Scan Podman image with Trivy
-      - name: Generate Trivy Report
+      # Step 6: Scan the image tar with Trivy
+      - name: Scan Podman image tar with Trivy
         run: |
-          trivy image --vuln-type os --ignore-unfixed -f json -o trivy-report.json pythonbaseimage:latest
+          trivy image --vuln-type os --ignore-unfixed -f json -o trivy-report.json pythonbaseimage.tar
 
-      # Step 6: Install Copacetic
+      # Step 7: Install Copacetic
       - name: Install Copacetic
         run: |
           sudo apt-get install -y wget jq
@@ -59,15 +65,16 @@ jobs:
           sudo mv copa /usr/local/bin/
           copa --version
 
-      # Step 7: Debug - list Podman images before patch
-      - name: Podman images before patch
-        run: podman images | grep pythonbaseimage
+      # Step 8: Debug - list Podman images before patch
+      - name: Debug: Podman images before patch
+        run: podman images | grep pythonbaseimage || true
 
-      # Step 8: Patch Podman image using Copa
-      - name: Patch Podman image with debug
+      # Step 9: Patch Podman image using Copa
+      - name: Patch Podman image with Copa
         run: |
           set -x
-          copa patch -i pythonbaseimage:latest \
+          copa patch \
+            -i pythonbaseimage:latest \
             -r trivy-report.json \
             -t pythonbaseimage:patched \
             --driver=podman \
@@ -75,19 +82,19 @@ jobs:
             --output out.json \
             --debug
 
-      # Step 9: Debug info - show Copa output JSON
-      - name: Copa output
+      # Step 10: Debug - show Copa output JSON
+      - name: Debug: Copa output
         run: cat out.json | jq '.'
 
-      # Step 10: List Podman images after patch
+      # Step 11: List Podman images after patch
       - name: List Podman Images After Patch
-        run: podman images | grep pythonbaseimage
+        run: podman images | grep pythonbaseimage || true
 
-      # Step 11: Scan patched image with Trivy
+      # Step 12: Scan patched image with Trivy
       - name: Scan Patched Image
         run: trivy image --vuln-type os --ignore-unfixed pythonbaseimage:patched
 
-      # Step 12: Show final output
+      # Step 13: Show final output
       - name: Final Output
         run: |
           echo "Patched image created:"
