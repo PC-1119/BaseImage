@@ -20,7 +20,7 @@ jobs:
       # Step 3: Build Docker image
       - name: Build Docker image
         run: |
-          docker build -t pythonbaseimage:latest .
+          docker buildx build --load -t pythonbaseimage:latest .
 
       # Step 4: Scan Docker image with Trivy
       - name: Generate Trivy Report
