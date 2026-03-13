@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout repo
+      # Step 1: Checkout the repository
       - name: Checkout code
         uses: actions/checkout@v3
 
@@ -66,18 +66,18 @@ jobs:
           echo "patched_tag=$new_tag" >> $GITHUB_OUTPUT
           echo "image_name=$image_name" >> $GITHUB_OUTPUT
 
-      # Step 7: Patch image with Copa locally
-      - name: Copa Action
+      # Step 7: Patch image using Copa container directly
+      - name: Copa Patch Locally
         if: steps.vuln_count.outputs.vuln_count != '0'
-        id: copa
-        uses: project-copacetic/copa-action@v1.0.0
-        with:
-          image: ${{ steps.build_image.outputs.image_name }}:${{ steps.build_image.outputs.image_tag }}
-          image-report: 'report.json'
-          patched-tag: ${{ steps.extract_tag.outputs.patched_tag }}
-          buildkit-version: 'v0.11.6'
-          timeout: 300
+        run: |
+          docker run --rm \
+            -v $PWD:/app \
+            ghcr.io/project-copacetic/copa-action:v0.13.0 \
+            patch \
+            --image ${{ steps.build_image.outputs.image_name }}:${{ steps.build_image.outputs.image_tag }} \
+            --report /app/report.json \
+            --patched-tag ${{ steps.extract_tag.outputs.patched_tag }}
 
-      # Optional: List local Docker images to verify patched image
+      # Step 8: List local Docker images to verify patched image
       - name: List Local Docker Images
         run: docker images
