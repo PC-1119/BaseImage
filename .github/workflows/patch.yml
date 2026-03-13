@@ -17,16 +17,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 3: Set up Docker Buildx
+      # Step 2: Set up Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Step 4: Build Docker image
+      # Step 3: Build Docker image
       - name: Build Docker image
         run: |
           docker build -t pythonbaseimage:latest .
+          docker images | grep pythonbaseimage
 
-      # Step 6: Scan Docker image from GHCR with Trivy
+      # Step 4: Scan Docker image with Trivy
       - name: Generate Trivy Report
         id: trivy_scan
         uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
@@ -37,7 +38,7 @@ jobs:
           ignore-unfixed: true
           image-ref: pythonbaseimage:latest
 
-      # Step 7: Count vulnerabilities and set step output
+      # Step 5: Count vulnerabilities and set step output
       - name: Check for vulnerabilities
         id: check_vulns
         run: |
@@ -45,7 +46,7 @@ jobs:
           echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
           echo "Total vulnerabilities found: $VULN_COUNT"
 
-      # Step 8: Install Copacetic
+      # Step 6: Install Copacetic
       - name: Install Copacetic
         run: |
           sudo apt-get update
@@ -59,17 +60,36 @@ jobs:
           sudo mv copa /usr/local/bin/
           copa --help
 
-      # Step 9: Patch image with Copacetic if vulnerabilities exist
+      # Step 7: Start BuildKit as a container (with Docker socket)
+      - name: Start BuildKit container
+        run: |
+          docker run --detach --rm --privileged \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -p 127.0.0.1:8888:8888/tcp \
+            --name buildkitd \
+            --entrypoint buildkitd \
+            moby/buildkit:v0.11.4 \
+            --addr tcp://0.0.0.0:8888
+          sleep 5
+          docker ps | grep buildkitd
+
+      # Step 8: Patch image with Copacetic if vulnerabilities exist
       - name: Patch image with Copacetic
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
           echo "Vulnerabilities detected. Patching image with Copacetic..."
+          docker images
           copa patch \
-            --image docker-daemon:pythonbaseimage:latest \
+            --image docker-daemon://pythonbaseimage:latest \
             --report report.json \
-            --tag pythonbaseimage:prathyusha
+            --tag pythonbaseimage:prathyusha \
+            -a tcp://0.0.0.0:8888
 
-      # Step 10: Final image check
+      # Step 9: Final image check
       - name: Final image check
         run: |
           docker images | grep pythonbaseimage
+
+      # Step 10: Stop BuildKit container
+      - name: Stop BuildKit container
+        run: docker stop buildkitd
