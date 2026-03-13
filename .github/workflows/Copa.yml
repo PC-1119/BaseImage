@@ -24,7 +24,13 @@ jobs:
           docker build -t pythonbaseimage:latest .
           docker images | grep pythonbaseimage
 
-      # Step 3: Install Trivy
+      # Step 3: Tag image with local namespace
+      - name: Tag image for local use
+        run: |
+          docker tag pythonbaseimage:latest local/pythonbaseimage:latest
+          docker images | grep local/pythonbaseimage
+
+      # Step 4: Install Trivy
       - name: Install Trivy
         run: |
           sudo apt-get update
@@ -35,12 +41,12 @@ jobs:
           sudo apt-get install -y trivy
           trivy --version
 
-      # Step 4: Scan Docker image with Trivy and export JSON
+      # Step 5: Scan Docker image with Trivy and export JSON
       - name: Generate Trivy Report
         run: |
-          trivy image --vuln-type os --ignore-unfixed -f json -o trivy-report.json pythonbaseimage:latest
+          trivy image --vuln-type os --ignore-unfixed -f json -o trivy-report.json local/pythonbaseimage:latest
 
-      # Step 5: Install Copacetic
+      # Step 6: Install Copacetic
       - name: Install Copacetic
         run: |
           sudo apt-get install -y wget jq
@@ -52,32 +58,32 @@ jobs:
           sudo mv copa /usr/local/bin/
           copa --version
 
-      # Step 6: Start BuildKit as a container
+      # Step 7: Start BuildKit as a container
       - name: Start BuildKit container
         run: |
           docker run --detach --rm --privileged -p 127.0.0.1:8888:8888/tcp --name buildkitd --entrypoint buildkitd moby/buildkit:v0.11.4 --addr tcp://0.0.0.0:8888
           sleep 5
           docker ps | grep buildkitd
 
-      # Step 7: Patch image with Copacetic using BuildKit address
+      # Step 8: Patch image with Copacetic using BuildKit address
       - name: Patch Docker image
         run: |
-          copa patch -i pythonbaseimage:latest -r trivy-report.json -t patched -a tcp://0.0.0.0:8888 --timeout 5m --output out.json
+          copa patch -i local/pythonbaseimage:latest -r trivy-report.json -t patched -a tcp://0.0.0.0:8888 --timeout 5m --output out.json
 
-      # Step 8: List Docker images after patch
+      # Step 9: List Docker images after patch
       - name: List Docker Images After Patch
         run: docker images | grep pythonbaseimage
 
-      # Step 9: Scan patched image with Trivy
+      # Step 10: Scan patched image with Trivy
       - name: Scan Patched Image
-        run: trivy image --vuln-type os --ignore-unfixed pythonbaseimage:patched
+        run: trivy image --vuln-type os --ignore-unfixed local/pythonbaseimage:patched
 
-      # Step 10: Stop BuildKit container
+      # Step 11: Stop BuildKit container
       - name: Stop BuildKit container
         run: docker stop buildkitd
 
-      # Step 11: Show Final Output
+      # Step 12: Show Final Output
       - name: Final Output
         run: |
           echo "Patched image created:"
-          echo "pythonbaseimage:patched"
+          echo "local/pythonbaseimage:patched"
