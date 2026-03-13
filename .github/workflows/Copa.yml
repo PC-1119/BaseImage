@@ -95,7 +95,3 @@ jobs:
       # Step 13: Scan patched image with Trivy
       - name: Scan Patched Image
         run: trivy image --vuln-type os --ignore-unfixed pythonbaseimage:patched
-
-      # Step 14: Show final output
-      - name: Final Output
-        run: echo "Patched image created: pythonbaseimage:patched"
