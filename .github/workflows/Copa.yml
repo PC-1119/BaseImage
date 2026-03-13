@@ -79,9 +79,9 @@ jobs:
         run: |
           echo "Vulnerabilities detected. Patching image with Copacetic..."
           copa patch \
-            --image ghcr.io/${{ steps.repo.outputs.repo }}/pythonbaseimage:latest \
+            --image ghcr.io/pc-1119/pythonbaseimage:latest \
             --report report.json \
-            --tag ghcr.io/${{ steps.repo.outputs.repo }}/pythonbaseimage:patched
+            --tag ghcr.io/pc-1119/pythonbaseimage:prathyusha
 
       # Step 10: Final image check
       - name: Final image check
