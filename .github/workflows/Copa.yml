@@ -1,78 +1,52 @@
-name: Docker Security Patch CI
-
+name: Patch vulnerable images (Action Local Containerd)
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-
+  
 jobs:
-  scan-and-patch:
+  patch:
     runs-on: ubuntu-latest
+    # used for pushing patched image to GHCR
     permissions:
       contents: read
       packages: write
-
     steps:
-      # Step 1: Checkout code
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # Step 2: Build Docker image (classic build)
-      - name: Build Docker image
-        run: |
-          docker build -t pythonbaseimage:latest .
-          docker images | grep pythonbaseimage
-
-      # Step 3: Scan Docker image with Trivy Action
-      - name: Generate Trivy Report
-        uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
-        with:
-          scan-type: 'image'
-          format: 'json'
-          output: 'trivy-report.json'
-          image-ref: 'pythonbaseimage:latest'
-
-      # Step 4: Retag image for Copacetic
-      - name: Retag image for Copacetic
-        run: |
-          docker tag pythonbaseimage:latest docker.io/local/pythonbaseimage:latest
-          docker images | grep pythonbaseimage
-
-      # Step 5: Set up Docker with containerd BuildKit (for Copacetic patching)
-      - name: Set up Docker (with containerd BuildKit)
+      - name: Set up Docker
         uses: docker/setup-docker-action@v4
         with:
           daemon-config: |
-            {
+              {
               "debug": true,
               "experimental": true,
-              "features": {
-                "containerd-snapshotter": true
+                  "features": {
+                  "containerd-snapshotter": true
+                  }
               }
-            }
-
-      # Step 6: Get Docker socket path
-      - name: Get Docker socket path
+      - name: Build Docker image
         run: |
-          url=$(docker context inspect | jq -r '.[0].Endpoints.docker.Host')
+          docker buildx build --load -t docker.io/local/focal:20200925 -f Dockerfile .
+          docker images
+      - name: Get socket path
+        run: |
+          url=$(docker context inspect | jq -r .[0].Endpoints.docker.Host)
           socket_path=$(echo "$url" | awk -F// '{print $2}')
+          echo "$socket_path"
           echo "SOCKET=$socket_path" >> $GITHUB_ENV
-          echo "Using Docker socket at: $socket_path"
-
-      # Step 7: Patch image with Copacetic
+        # copa action will only run if there are vulnerabilities
       - name: Run Copa action
+        id: copa
         uses: project-copacetic/copa-action@v1.2.1
         with:
-          image: "docker.io/local/pythonbaseimage:latest"
-          image-report: "trivy-report.json"
+          image: "docker.io/local/focal:20200925"
+          image-report: "focal:20200925.json"
           patched-tag: "patched"
           timeout: 5m
           custom-socket: ${SOCKET}
           output: out.json
 
-      # Step 8: Final image check
-      - name: Final image check
-        run: |
-          echo "Images after patching:"
-          docker images | grep pythonbaseimage
+      - run: sudo cat out.json
