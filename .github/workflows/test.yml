@@ -58,9 +58,9 @@ jobs:
             echo "==== Patching Image with Copacetic ===="
             copa patch -r nginx-report.json -i $IMAGE
             copa patch \
-              --image docker-daemon://pythonbaseimage:latest \
+              --image docker.io/library/pythonbaseimage:latest \
               --report report.json \
-              --tag docker-daemon://pythonbaseimage:prathyusha
+              --tag pythonbaseimage:prathyusha
           else
             echo "==== No vulnerabilities found, skipping patch ===="
           fi
