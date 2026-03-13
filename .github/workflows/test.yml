@@ -56,7 +56,6 @@ jobs:
 
           if [ "$VULN_COUNT" -ne 0 ]; then
             echo "==== Patching Image with Copacetic ===="
-            copa patch -r nginx-report.json -i $IMAGE
             copa patch \
               --image docker.io/library/pythonbaseimage:latest \
               --report report.json \
