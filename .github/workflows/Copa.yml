@@ -29,10 +29,10 @@ jobs:
       # Step 3: Build Docker image locally and tag with docker.io prefix
       - name: Build Docker image
         run: |
-          docker buildx build --load -t local/pythonbaseimage:latest .
+          docker buildx build --load -t docker.io/local/pythonbaseimage:latest .
           docker images | grep pythonbaseimage
 
-      # Step 3b: Get Docker socket path
+      # Step 4: Get Docker socket path
       - name: Get Docker socket path
         run: |
           url=$(docker context inspect | jq -r '.[0].Endpoints.docker.Host')
@@ -40,7 +40,7 @@ jobs:
           echo "SOCKET=$socket_path" >> $GITHUB_ENV
           echo "Using Docker socket at: $socket_path"
 
-      # Step 4: Scan Docker image with Trivy
+      # Step 5: Scan Docker image with Trivy
       - name: Generate Trivy Report
         id: trivy_scan
         uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
@@ -49,9 +49,9 @@ jobs:
           format: 'json'
           output: 'report.json'
           ignore-unfixed: true
-          image-ref: "local/pythonbaseimage:latest"
+          image-ref: "docker.io/local/pythonbaseimage:latest"
 
-      # Step 5: Count vulnerabilities and set step output
+      # Step 6: Count vulnerabilities and set step output
       - name: Check for vulnerabilities
         id: check_vulns
         run: |
@@ -59,19 +59,20 @@ jobs:
           echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
           echo "Total vulnerabilities found: $VULN_COUNT"
 
-      # Step 6: Patch image with Copacetic if vulnerabilities exist
+      # Step 7: Patch image with Copacetic if vulnerabilities exist
       - name: Run Copa action
         id: copa
+        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         uses: project-copacetic/copa-action@v1.2.1
         with:
-          image: "local/pythonbaseimage:latest"
+          image: "docker.io/local/pythonbaseimage:latest"
           image-report: "report.json"
-          patched-tag: "local/pythonbaseimage:patched"
+          patched-tag: "patched"
           timeout: 5m
           custom-socket: ${SOCKET}
           output: out.json
 
-      # Step 7: Final image check
+      # Step 8: Final image check
       - name: Final image check
         run: |
           echo "Images after patching:"
