@@ -1,0 +1,62 @@
+name: Testing
+
+on:
+  push:
+    branches:
+      - test
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  security-pipeline-single-step:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Full Security Pipeline
+        run: |
+          echo "==== Installing dependencies ===="
+          sudo apt-get update
+          sudo apt-get install -y wget tar jq curl
+
+          echo "==== Installing Trivy ===="
+          sudo apt-get install -y apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+          echo "==== Installing Copacetic ===="
+          COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
+          ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
+            | jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
+          wget "$ASSET_URL" -O copacetic.tar.gz
+          tar -xzf copacetic.tar.gz
+          sudo mv copa /usr/local/bin/
+
+          echo "==== Building Docker Image ===="
+          docker build -t pythonbaseimage:latest .
+
+          echo "==== Verifying Image ===="
+          docker images | grep pythonbaseimage
+
+          echo "==== Running Trivy Scan ===="
+          trivy image --format json -o report.json pythonbaseimage:latest
+
+          echo "==== Counting Vulnerabilities ===="
+          VULN_COUNT=$(jq '[.Results[].Vulnerabilities[]?] | length' report.json)
+          echo "Total vulnerabilities found: $VULN_COUNT"
+
+          if [ "$VULN_COUNT" -ne 0 ]; then
+            echo "==== Patching Image with Copacetic ===="
+            copa patch \
+              --image docker-daemon:pythonbaseimage:latest \
+              --report report.json \
+              --tag pythonbaseimage:prathyusha
+          else
+            echo "==== No vulnerabilities found, skipping patch ===="
+          fi
+
+          echo "==== Final Image List ===="
+          docker images | grep pythonbaseimage
