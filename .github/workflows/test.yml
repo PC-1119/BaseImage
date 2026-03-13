@@ -22,13 +22,11 @@ jobs:
           echo "==== Installing dependencies ===="
           sudo apt-get update
           sudo apt-get install -y wget tar jq curl apt-transport-https gnupg lsb-release
-
           echo "==== Installing Trivy ===="
           wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
           echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/trivy.list
           sudo apt-get update
           sudo apt-get install -y trivy
-
           echo "==== Installing Copacetic ===="
           COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
           ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
@@ -36,37 +34,28 @@ jobs:
           wget "$ASSET_URL" -O copacetic.tar.gz
           tar -xzf copacetic.tar.gz
           sudo mv copa /usr/local/bin/
-
-          echo "==== Enabling BuildKit for Docker ===="
-          export DOCKER_BUILDKIT=1
+          echo "==== Starting BuildKit (required for Copacetic) ===="
           docker buildx create --use --name mybuilder
           docker buildx inspect --bootstrap
-
           echo "==== Building Docker Image ===="
           docker build -t pythonbaseimage:latest .
-
           export IMAGE=pythonbaseimage:latest
           echo "Image built: $IMAGE"
-
           echo "==== Verifying Image ===="
           docker images | grep pythonbaseimage
-
           echo "==== Running Trivy Scan ===="
           trivy image --format json -o report.json $IMAGE
-
           echo "==== Counting Vulnerabilities ===="
           VULN_COUNT=$(jq '[.Results[].Vulnerabilities[]?] | length' report.json)
           echo "Total vulnerabilities found: $VULN_COUNT"
-
           if [ "$VULN_COUNT" -ne 0 ]; then
             echo "==== Patching Image with Copacetic ===="
             copa patch \
-              --image docker-daemon:$IMAGE \
+              --image docker.io/library/pythonbaseimage:latest \
               --report report.json \
-              --tag pythonbaseimage:patched
+              --tag docker.io/library/pythonbaseimage:issokayy
           else
             echo "==== No vulnerabilities found, skipping patch ===="
           fi
-
           echo "==== Final Image List ===="
           docker images | grep pythonbaseimage
