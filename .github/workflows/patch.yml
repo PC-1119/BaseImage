@@ -1,95 +1,85 @@
-name: Docker Security CI 1
+name: Docker Security Patch CI
 
 on:
   push:
     branches:
       - main
-      
-permissions:
-  contents: read
-  packages: write
+  workflow_dispatch:
 
 jobs:
-  trivy-scan-and-build:
+  scan-and-patch:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       # Step 1: Checkout code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Set up Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      # Step 2: Set up Docker with containerd BuildKit
+      - name: Set up Docker (with containerd BuildKit)
+        uses: docker/setup-docker-action@v4
+        with:
+          daemon-config: |
+            {
+              "debug": true,
+              "experimental": true,
+              "features": {
+                "containerd-snapshotter": true
+              }
+            }
 
-      # Step 3: Build Docker image
+      # Step 3: Build Docker image (classic build)
       - name: Build Docker image
         run: |
           docker build -t pythonbaseimage:latest .
           docker images | grep pythonbaseimage
 
-      # Step 4: Scan Docker image with Trivy
-      - name: Generate Trivy Report
-        id: trivy_scan
-        uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
-        with:
-          scan-type: 'image'
-          format: 'json'
-          output: 'report.json'
-          ignore-unfixed: true
-          image-ref: pythonbaseimage:latest
-
-      # Step 5: Count vulnerabilities and set step output
-      - name: Check for vulnerabilities
-        id: check_vulns
+      # Step 4: Install Trivy
+      - name: Install Trivy
         run: |
-          VULN_COUNT=$(jq '[.Results[].Vulnerabilities[]?] | length' report.json)
-          echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
-          echo "Total vulnerabilities found: $VULN_COUNT"
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+          trivy --version
+
+      # Step 5: Scan Docker image with Trivy and export JSON
+      - name: Generate Trivy Report
+        run: |
+          trivy image --vuln-type os --ignore-unfixed -f json -o trivy-report.json pythonbaseimage:latest
 
       # Step 6: Install Copacetic
       - name: Install Copacetic
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget tar jq
+          sudo apt-get install -y wget jq
           COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
           ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
-            | jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
-          echo "Installing Copacetic $COPA_VERSION"
-          wget "$ASSET_URL" -O copacetic.tar.gz
-          tar -xzf copacetic.tar.gz
+            | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
+          wget "$ASSET_URL" -O copa.tar.gz
+          tar -xzf copa.tar.gz
           sudo mv copa /usr/local/bin/
-          copa --help
+          copa --version
 
-      # Step 7: Start BuildKit as a container (with Docker socket)
-      - name: Start BuildKit container
+      # Step 7: Patch image with Copacetic (no BuildKit container needed)
+      - name: Patch Docker image
         run: |
-          docker run --detach --rm --privileged \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -p 127.0.0.1:8888:8888/tcp \
-            --name buildkitd \
-            --entrypoint buildkitd \
-            moby/buildkit:v0.11.4 \
-            --addr tcp://0.0.0.0:8888
-          sleep 5
-          docker ps | grep buildkitd
+          copa patch --image docker-daemon://pythonbaseimage:latest --report trivy-report.json --tag pythonbaseimage:patched
 
-      # Step 8: Patch image with Copacetic if vulnerabilities exist
-      - name: Patch image with Copacetic
-        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
+      # Step 8: List Docker images after patch
+      - name: List Docker Images After Patch
+        run: docker images | grep pythonbaseimage
+
+      # Step 9: Scan patched image with Trivy
+      - name: Scan Patched Image
+        run: trivy image --vuln-type os --ignore-unfixed pythonbaseimage:patched
+
+      # Step 10: Show Final Output
+      - name: Final Output
         run: |
-          echo "Vulnerabilities detected. Patching image with Copacetic..."
-          docker images
-          copa patch \
-            --image docker-daemon://pythonbaseimage:latest \
-            --report report.json \
-            --tag pythonbaseimage:prathyusha \
-            -a tcp://0.0.0.0:8888
-
-      # Step 9: Final image check
-      - name: Final image check
-        run: |
-          docker images | grep pythonbaseimage
-
-      # Step 10: Stop BuildKit container
-      - name: Stop BuildKit container
-        run: docker stop buildkitd
+          echo "Patched image created:"
+          echo "pythonbaseimage:patched"
