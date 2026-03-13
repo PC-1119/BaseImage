@@ -1,4 +1,4 @@
-name: Docker Security CI
+name: Docker Security CI 1
 
 on:
   push:
@@ -67,7 +67,7 @@ jobs:
         run: |
           echo "Vulnerabilities detected. Patching image with Copacetic..."
           copa patch \
-            --image docker://pc-1119/pythonbaseimage:latest \
+            --image docker-daemon:pc-1119/pythonbaseimage:latest \
             --report report.json \
             --tag pc-1119/pythonbaseimage:prathyusha
 
