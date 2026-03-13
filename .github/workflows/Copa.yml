@@ -19,17 +19,20 @@ jobs:
         run: |
           docker build -t pythonbaseimage .
 
-      - name: Scan Docker image with Trivy
-        uses: aquasecurity/trivy-action@v0.31.3
+      - name: Generate Trivy Report
+        id: trivy_scan
+        uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
         with:
+          scan-type: 'image'
+          format: 'json'
+          output: 'report.json'
+          ignore-unfixed: true
           image-ref: pythonbaseimage
-          format: json
-          output: trivy.json
 
       - name: Check for vulnerabilities
         id: check_vulns
         run: |
-          VULN_COUNT=$(jq '[.Results[].Vulnerabilities[]?] | length' trivy.json)
+          VULN_COUNT=$(jq '[.Results[].Vulnerabilities[]?] | length' report.json)
           echo "VULN_COUNT=$VULN_COUNT" >> $GITHUB_ENV
           echo "Total vulnerabilities found: $VULN_COUNT"
 
