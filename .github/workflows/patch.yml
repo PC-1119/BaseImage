@@ -67,7 +67,7 @@ jobs:
         run: |
           echo "Vulnerabilities detected. Patching image with Copacetic..."
           copa patch \
-            --image pc-1119/pythonbaseimage:latest \
+            --image docker://pc-1119/pythonbaseimage:latest \
             --report report.json \
             --tag pc-1119/pythonbaseimage:prathyusha
 
