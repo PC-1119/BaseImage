@@ -66,7 +66,7 @@ jobs:
           copa --version
 
       # Step 8: Debug - list Podman images before patch
-      - name: Debug: Podman images before patch
+      - name: Podman images before patch
         run: podman images | grep pythonbaseimage || true
 
       # Step 9: Patch Podman image using Copa
@@ -83,7 +83,7 @@ jobs:
             --debug
 
       # Step 10: Debug - show Copa output JSON
-      - name: Debug: Copa output
+      - name: Copa output
         run: cat out.json | jq '.'
 
       # Step 11: List Podman images after patch
