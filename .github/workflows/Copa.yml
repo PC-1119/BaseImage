@@ -11,127 +11,140 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # -----------------------------
-      # Checkout repository
-      # -----------------------------
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # fetch all tags for versioning
 
-      # -----------------------------
-      # Determine Latest Semantic Version
-      # -----------------------------
-      - name: Determine Latest Version
-        id: version
-        run: |
-          git fetch --tags
-          # Default to v1.0 if no tags exist
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0")
-          echo "Latest tag: $LATEST_TAG"
-          # Strip 'v'
-          VERSION_NUM=${LATEST_TAG#v}
-          # Split major.minor
-          MAJOR=${VERSION_NUM%%.*}
-          MINOR=${VERSION_NUM##*.}
-          # Increment minor
-          MINOR=$((MINOR + 1))
-          NEW_VERSION="$MAJOR.$MINOR"
-          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
-          echo "New image version: $NEW_VERSION"
+    # -----------------------------
+    # Checkout repository
+    # -----------------------------
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-      # -----------------------------
-      # Build Docker Image (local)
-      # -----------------------------
-      - name: Build Docker Image
-        run: |
-          docker build -t app-image:${{ env.NEW_VERSION }} .
+    # -----------------------------
+    # Determine Latest Version
+    # -----------------------------
+    - name: Determine Latest Version
+      id: version
+      run: |
+        git fetch --tags
 
-      # -----------------------------
-      # List Local Docker Images
-      # -----------------------------
-      - name: List Local Docker Images
-        run: docker images
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0")
+        echo "Latest tag: $LATEST_TAG"
 
-      # -----------------------------
-      # Install Trivy dynamically
-      # -----------------------------
-      - name: Install Trivy
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget tar jq
-          TRIVY_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name)
-          echo "Installing Trivy $TRIVY_VERSION"
-          wget https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
-          tar -xzf trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
-          sudo mv trivy /usr/local/bin/
-          trivy --version
+        VERSION_NUM=${LATEST_TAG#v}
 
-      # -----------------------------
-      # Scan Docker Image
-      # -----------------------------
-      - name: Run Trivy Scan
-        run: |
-          trivy image \
-            --format json \
-            --output trivy-report.json \
-            app-image:${{ env.NEW_VERSION }}
+        MAJOR=$(echo $VERSION_NUM | cut -d. -f1)
+        MINOR=$(echo $VERSION_NUM | cut -d. -f2)
 
-      - name: Show Trivy Report
-        run: cat trivy-report.json
+        MINOR=$((MINOR + 1))
 
-      # -----------------------------
-      # Install Copacetic dynamically
-      # -----------------------------
-      - name: Install Copacetic
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget tar jq
-          COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
-          ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
-            | jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
-          echo "Installing Copacetic $COPA_VERSION"
-          echo "Asset URL: $ASSET_URL"
-          wget "$ASSET_URL" -O copacetic.tar.gz
-          tar -xzf copacetic.tar.gz
-          sudo mv copa /usr/local/bin/
-          copa --help
+        NEW_VERSION="$MAJOR.$MINOR"
 
-      # -----------------------------
-      # Set up Docker Buildx
-      # -----------------------------
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
+        echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+        echo "New Version: $NEW_VERSION"
 
-      # -----------------------------
-      # Patch Local Image (no -patched in tag)
-      # -----------------------------
-      - name: Patch Local Image
-        run: |
-          copa patch \
-            --image "docker-daemon://app-image:${{ env.NEW_VERSION }}" \
-            --report trivy-report.json \
-            --tag "patched-image:${{ env.NEW_VERSION }}"
+    # -----------------------------
+    # Build Docker Image
+    # -----------------------------
+    - name: Build Docker Image
+      run: |
+        docker build -t app-image:${{ env.NEW_VERSION }} .
 
-      # -----------------------------
-      # List Docker Images After Patch
-      # -----------------------------
-      - name: List Docker Images After Patch
-        run: docker images
+    # -----------------------------
+    # Verify Image Exists
+    # -----------------------------
+    - name: List Docker Images
+      run: docker images
 
-      # -----------------------------
-      # Scan Patched Image
-      # -----------------------------
-      - name: Scan Patched Image
-        run: |
-          trivy image patched-image:${{ env.NEW_VERSION }}
+    # -----------------------------
+    # Install Trivy
+    # -----------------------------
+    - name: Install Trivy
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget jq
 
-      # -----------------------------
-      # Show Final Patched Image
-      # -----------------------------
-      - name: Show Final Image
-        run: |
-          echo "Patched image created:"
-          echo "patched-image:${{ env.NEW_VERSION }}"
+        TRIVY_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name)
+
+        wget https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
+        tar -xzf trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
+
+        sudo mv trivy /usr/local/bin/
+
+        trivy --version
+
+    # -----------------------------
+    # Scan Docker Image
+    # -----------------------------
+    - name: Run Trivy Scan
+      run: |
+        trivy image \
+        --format json \
+        --output trivy-report.json \
+        app-image:${{ env.NEW_VERSION }}
+
+    - name: Show Trivy Report
+      run: cat trivy-report.json
+
+    # -----------------------------
+    # Install Copacetic
+    # -----------------------------
+    - name: Install Copacetic
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget jq
+
+        COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
+
+        ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
+          | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
+
+        echo "Installing Copacetic $COPA_VERSION"
+
+        wget "$ASSET_URL" -O copa.tar.gz
+
+        tar -xzf copa.tar.gz
+
+        sudo mv copa /usr/local/bin/
+
+        copa --help
+
+    # -----------------------------
+    # Setup Docker Buildx
+    # -----------------------------
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Initialize Builder
+      run: docker buildx inspect --bootstrap
+
+    # -----------------------------
+    # Patch Image using Copacetic
+    # -----------------------------
+    - name: Patch Docker Image
+      run: |
+        copa patch \
+        --image docker-daemon:app-image:${{ env.NEW_VERSION }} \
+        --report trivy-report.json \
+        --tag patched-image:${{ env.NEW_VERSION }}
+
+    # -----------------------------
+    # List Images After Patch
+    # -----------------------------
+    - name: List Docker Images After Patch
+      run: docker images
+
+    # -----------------------------
+    # Scan Patched Image
+    # -----------------------------
+    - name: Scan Patched Image
+      run: |
+        trivy image patched-image:${{ env.NEW_VERSION }}
+
+    # -----------------------------
+    # Final Output
+    # -----------------------------
+    - name: Show Final Patched Image
+      run: |
+        echo "Patched Image:"
+        echo "patched-image:${{ env.NEW_VERSION }}"
