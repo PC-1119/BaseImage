@@ -68,7 +68,7 @@ jobs:
       # Step 7: Patch image with Copacetic (no BuildKit container needed)
       - name: Patch Docker image
         run: |
-          copa patch --image docker-daemon://pythonbaseimage:latest --report trivy-report.json --tag pythonbaseimage:patched
+          copa patch --image docker-daemon://pythonbaseimage:latest --report trivy-report.json
 
       # Step 8: List Docker images after patch
       - name: List Docker Images After Patch
