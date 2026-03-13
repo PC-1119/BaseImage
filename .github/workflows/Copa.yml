@@ -51,25 +51,29 @@ jobs:
         docker build -t app-image:${{ env.NEW_VERSION }} .
 
     # -----------------------------
-    # Verify Image Exists
+    # Verify Image
     # -----------------------------
     - name: List Docker Images
       run: docker images
 
     # -----------------------------
-    # Install Trivy
+    # Install Trivy (Official repo)
     # -----------------------------
     - name: Install Trivy
       run: |
         sudo apt-get update
-        sudo apt-get install -y wget jq
+        sudo apt-get install -y wget apt-transport-https gnupg lsb-release
 
-        TRIVY_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name)
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
+          gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
 
-        wget https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
-        tar -xzf trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz
+        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] \
+        https://aquasecurity.github.io/trivy-repo/deb \
+        $(lsb_release -sc) main" | \
+        sudo tee /etc/apt/sources.list.d/trivy.list
 
-        sudo mv trivy /usr/local/bin/
+        sudo apt-get update
+        sudo apt-get install -y trivy
 
         trivy --version
 
@@ -119,7 +123,7 @@ jobs:
       run: docker buildx inspect --bootstrap
 
     # -----------------------------
-    # Patch Image using Copacetic
+    # Patch Docker Image
     # -----------------------------
     - name: Patch Docker Image
       run: |
@@ -129,9 +133,9 @@ jobs:
         --tag patched-image:${{ env.NEW_VERSION }}
 
     # -----------------------------
-    # List Images After Patch
+    # Show Images After Patch
     # -----------------------------
-    - name: List Docker Images After Patch
+    - name: List Images After Patch
       run: docker images
 
     # -----------------------------
@@ -144,7 +148,7 @@ jobs:
     # -----------------------------
     # Final Output
     # -----------------------------
-    - name: Show Final Patched Image
+    - name: Show Final Image
       run: |
-        echo "Patched Image:"
+        echo "Patched image created:"
         echo "patched-image:${{ env.NEW_VERSION }}"
