@@ -16,14 +16,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
       - name: Full Security Pipeline
         run: |
           echo "==== Installing dependencies ===="
           sudo apt-get update
-          sudo apt-get install -y wget tar jq curl
+          sudo apt-get install -y wget tar jq curl apt-transport-https gnupg lsb-release
 
           echo "==== Installing Trivy ===="
-          sudo apt-get install -y apt-transport-https gnupg lsb-release
           wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
           echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/trivy.list
           sudo apt-get update
@@ -37,18 +37,21 @@ jobs:
           tar -xzf copacetic.tar.gz
           sudo mv copa /usr/local/bin/
 
+          echo "==== Starting BuildKit (required for Copacetic) ===="
+          docker buildx create --use --name mybuilder
+          docker buildx inspect --bootstrap
+
           echo "==== Building Docker Image ===="
           docker build -t pythonbaseimage:latest .
+
           export IMAGE=pythonbaseimage:latest
-          echo "zuiiii"
-          echo $IMAGE
-          echo "tuiiiii"
+          echo "Image built: $IMAGE"
 
           echo "==== Verifying Image ===="
           docker images | grep pythonbaseimage
 
           echo "==== Running Trivy Scan ===="
-          trivy image --format json -o report.json pythonbaseimage:latest
+          trivy image --format json -o report.json $IMAGE
 
           echo "==== Counting Vulnerabilities ===="
           VULN_COUNT=$(jq '[.Results[].Vulnerabilities[]?] | length' report.json)
@@ -57,9 +60,9 @@ jobs:
           if [ "$VULN_COUNT" -ne 0 ]; then
             echo "==== Patching Image with Copacetic ===="
             copa patch \
-              --image docker.io/library/pythonbaseimage:latest \
+              --image docker-daemon:$IMAGE \
               --report report.json \
-              --tag pythonbaseimage:prathyusha
+              --tag pythonbaseimage:patched
           else
             echo "==== No vulnerabilities found, skipping patch ===="
           fi
