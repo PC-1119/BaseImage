@@ -9,20 +9,9 @@ jobs:
   trivy-scan-and-build:
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Checkout code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Trivy scan Dockerfile
-      - name: Trivy scan Dockerfile
-        uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
-        with:
-          scan-type: 'dockerfile'
-          format: 'json'
-          output: 'dockerfile-report.json'
-          dockerfile: 'Dockerfile'
-
-      # Step 3: Set up Docker with containerd BuildKit
       - name: Set up Docker (with containerd BuildKit)
         uses: docker/setup-docker-action@v4
         with:
@@ -35,13 +24,20 @@ jobs:
               }
             }
 
-      # Step 4: Build Docker image locally
       - name: Build Docker image
         run: |
-          docker buildx build --load -t local/pythonbaseimage:latest .
+          docker buildx build --load -t pythonbaseimage:latest .
           docker images | grep pythonbaseimage
 
-      # Step 5: Get Docker socket path
+      - name: Scan Docker image with Trivy
+        run: |
+          trivy image --format json --output trivy-report.json pythonbaseimage:latest
+
+      - name: Retag image for Copacetic
+        run: |
+          docker tag pythonbaseimage:latest docker.io/local/pythonbaseimage:latest
+          docker images | grep pythonbaseimage
+
       - name: Get Docker socket path
         run: |
           url=$(docker context inspect | jq -r '.[0].Endpoints.docker.Host')
@@ -49,18 +45,16 @@ jobs:
           echo "SOCKET=$socket_path" >> $GITHUB_ENV
           echo "Using Docker socket at: $socket_path"
 
-      # Step 6: Patch image with Copacetic
       - name: Run Copa action
         uses: project-copacetic/copa-action@v1.2.1
         with:
-          image: "local/pythonbaseimage:latest"
-          image-report: "dockerfile-report.json"
+          image: "docker.io/local/pythonbaseimage:latest"
+          image-report: "trivy-report.json"
           patched-tag: "patched"
           timeout: 5m
           custom-socket: ${SOCKET}
           output: out.json
 
-      # Step 7: Final image check
       - name: Final image check
         run: |
           echo "Images after patching:"
