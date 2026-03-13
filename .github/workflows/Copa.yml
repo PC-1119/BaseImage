@@ -13,7 +13,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Set up Docker with containerd BuildKit
+      # Step 2: Trivy scan Dockerfile
+      - name: Trivy scan Dockerfile
+        uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
+        with:
+          scan-type: 'dockerfile'
+          format: 'json'
+          output: 'dockerfile-report.json'
+          dockerfile: 'Dockerfile'
+
+      # Step 3: Set up Docker with containerd BuildKit
       - name: Set up Docker (with containerd BuildKit)
         uses: docker/setup-docker-action@v4
         with:
@@ -26,13 +35,13 @@ jobs:
               }
             }
 
-      # Step 3: Build Docker image locally and tag with docker.io prefix
+      # Step 4: Build Docker image locally
       - name: Build Docker image
         run: |
-          docker buildx build --load -t docker.io/local/pythonbaseimage:latest .
+          docker buildx build --load -t local/pythonbaseimage:latest .
           docker images | grep pythonbaseimage
 
-      # Step 4: Get Docker socket path
+      # Step 5: Get Docker socket path
       - name: Get Docker socket path
         run: |
           url=$(docker context inspect | jq -r '.[0].Endpoints.docker.Host')
@@ -40,39 +49,18 @@ jobs:
           echo "SOCKET=$socket_path" >> $GITHUB_ENV
           echo "Using Docker socket at: $socket_path"
 
-      # Step 5: Scan Docker image with Trivy
-      - name: Generate Trivy Report
-        id: trivy_scan
-        uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
-        with:
-          scan-type: 'image'
-          format: 'json'
-          output: 'report.json'
-          ignore-unfixed: true
-          image-ref: "docker.io/local/pythonbaseimage:latest"
-
-      # Step 6: Count vulnerabilities and set step output
-      - name: Check for vulnerabilities
-        id: check_vulns
-        run: |
-          VULN_COUNT=$(jq '[.Results[].Vulnerabilities[]?] | length' report.json)
-          echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
-          echo "Total vulnerabilities found: $VULN_COUNT"
-
-      # Step 7: Patch image with Copacetic if vulnerabilities exist
+      # Step 6: Patch image with Copacetic
       - name: Run Copa action
-        id: copa
-        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         uses: project-copacetic/copa-action@v1.2.1
         with:
-          image: "docker.io/local/pythonbaseimage:latest"
-          image-report: "report.json"
+          image: "local/pythonbaseimage:latest"
+          image-report: "dockerfile-report.json"
           patched-tag: "patched"
           timeout: 5m
           custom-socket: ${SOCKET}
           output: out.json
 
-      # Step 8: Final image check
+      # Step 7: Final image check
       - name: Final image check
         run: |
           echo "Images after patching:"
