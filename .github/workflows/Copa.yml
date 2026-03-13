@@ -34,7 +34,7 @@ jobs:
 
       # Step 5: Push image to GHCR
       - name: Push image to GHCR
-        run: docker push ghcr.io/baseimage/pythonbaseimage:latest
+        run: docker push ghcr.io/pc-1119/pythonbaseimage:latest
 
       # Step 6: Scan Docker image from GHCR with Trivy
       - name: Generate Trivy Report
