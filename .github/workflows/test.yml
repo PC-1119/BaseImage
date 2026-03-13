@@ -40,7 +40,9 @@ jobs:
           echo "==== Building Docker Image ===="
           docker build -t pythonbaseimage:latest .
           export IMAGE=pythonbaseimage:latest
+          echo "zuiiii"
           echo $IMAGE
+          echo "tuiiiii"
 
           echo "==== Verifying Image ===="
           docker images | grep pythonbaseimage
