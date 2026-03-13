@@ -61,7 +61,7 @@ jobs:
         run: |
           echo "Vulnerabilities detected. Patching image with Copacetic..."
           docker images
-          copa patch --image docker://local/pythonbaseimage:latest --report report.json --tag pythonbaseimage:patched
+          copa patch --image docker-daemon:local/pythonbaseimage:latest --report report.json
       # Step 8: Final image check
       - name: Final image check
         run: |
