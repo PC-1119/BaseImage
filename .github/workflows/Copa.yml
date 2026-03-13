@@ -18,13 +18,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Build Docker image (classic build)
+      # Step 2: Build Docker image
       - name: Build Docker image
         run: |
           docker build -t pythonbaseimage:latest .
           docker images | grep pythonbaseimage
 
-      # Step 3: Tag image with local namespace
+      # Step 3: Tag image for local use
       - name: Tag image for local use
         run: |
           docker tag pythonbaseimage:latest local/pythonbaseimage:latest
@@ -58,43 +58,25 @@ jobs:
           sudo mv copa /usr/local/bin/
           copa --version
 
-      # Step 7: Start BuildKit container
-      - name: Start BuildKit container
-        run: |
-          docker run -d --rm --privileged --name buildkitd -p 127.0.0.1:1234:1234 moby/buildkit:v0.11.4 --addr tcp://0.0.0.0:1234
-          sleep 5
-          docker ps | grep buildkitd
-
-      # Step 8: Import local image into BuildKit
-      - name: Import local image into BuildKit
-        run: |
-          docker save local/pythonbaseimage:latest | docker exec -i buildkitd buildctl images import
-
-      # Step 9: Patch Docker image with Copacetic using BuildKit
+      # Step 7: Patch Docker image using Docker socket
       - name: Patch Docker image
         run: |
           copa patch -i local/pythonbaseimage:latest \
                      -r trivy-report.json \
                      -t patched \
-                     -a tcp://127.0.0.1:1234 \
+                     -a unix:///var/run/docker.sock \
                      --timeout 5m \
                      --output out.json
 
-      # Step 10: Pull patched image back to host Docker
-      - name: Pull patched image from BuildKit to host
-        run: |
-          buildctl --addr tcp://127.0.0.1:1234 images pull local/pythonbaseimage:patched
-          docker images | grep pythonbaseimage
+      # Step 8: List Docker images after patch
+      - name: List Docker Images After Patch
+        run: docker images | grep pythonbaseimage
 
-      # Step 11: Scan patched image with Trivy
+      # Step 9: Scan patched image with Trivy
       - name: Scan Patched Image
         run: trivy image --vuln-type os --ignore-unfixed local/pythonbaseimage:patched
 
-      # Step 12: Stop BuildKit container
-      - name: Stop BuildKit container
-        run: docker stop buildkitd
-
-      # Step 13: Show Final Output
+      # Step 10: Show final output
       - name: Final Output
         run: |
           echo "Patched image created:"
