@@ -23,6 +23,8 @@ jobs:
           docker build -t pythonbaseimage:latest .
       - name: Verify image exists
         run: docker images
+      - name: Save Docker image
+        run: docker save pythonbaseimage:latest -o pythonbaseimage.tar
       # Step 4: Scan Docker image with Trivy
       - name: Generate Trivy Report
         id: trivy_scan
@@ -61,7 +63,7 @@ jobs:
         run: |
           echo "Vulnerabilities detected. Patching image with Copacetic..."
           docker images
-          copa patch --image pythonbaseimage:latest --report report.json
+          copa patch --image oci-archive:pythonbaseimage.tar --report report.json
       # Step 8: Final image check
       - name: Final image check
         run: |
