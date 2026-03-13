@@ -39,6 +39,8 @@ jobs:
 
           echo "==== Building Docker Image ===="
           docker build -t pythonbaseimage:latest .
+          export IMAGE=pythonbaseimage:latest
+          echo $IMAGE
 
           echo "==== Verifying Image ===="
           docker images | grep pythonbaseimage
@@ -52,6 +54,7 @@ jobs:
 
           if [ "$VULN_COUNT" -ne 0 ]; then
             echo "==== Patching Image with Copacetic ===="
+            copa patch -r nginx-report.json -i $IMAGE
             copa patch \
               --image docker-daemon://pythonbaseimage:latest \
               --report report.json \
