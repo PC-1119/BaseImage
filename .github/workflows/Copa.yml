@@ -20,7 +20,7 @@ jobs:
       # Step 3: Build Docker image
       - name: Build Docker image
         run: |
-          docker buildx build --load -t local/pythonbaseimage:latest .
+          docker build -t pythonbaseimage:latest .
       - name: Verify image exists
         run: docker images
       # Step 4: Scan Docker image with Trivy
@@ -32,7 +32,7 @@ jobs:
           format: 'json'
           output: 'report.json'
           ignore-unfixed: true
-          image-ref: local/pythonbaseimage:latest
+          image-ref: pythonbaseimage:latest
 
       # Step 5: Count vulnerabilities and set step output
       - name: Check for vulnerabilities
@@ -61,7 +61,7 @@ jobs:
         run: |
           echo "Vulnerabilities detected. Patching image with Copacetic..."
           docker images
-          copa patch --image docker-daemon:local/pythonbaseimage:latest --report report.json --platform linux/amd64
+          copa patch --image docker-daemon:pythonbaseimage:latest --report report.json
       # Step 8: Final image check
       - name: Final image check
         run: |
