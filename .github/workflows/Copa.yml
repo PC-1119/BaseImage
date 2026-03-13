@@ -30,7 +30,7 @@ jobs:
         run: |
           docker build -t pythonbaseimage:latest .
           # Tag for GHCR
-          docker tag pythonbaseimage:latest ghcr.io/baseimage/pythonbaseimage:latest
+          docker tag pythonbaseimage:latest ghcr.io/pc-1119/pythonbaseimage:latest
 
       # Step 5: Push image to GHCR
       - name: Push image to GHCR
@@ -45,7 +45,7 @@ jobs:
           format: 'json'
           output: 'report.json'
           ignore-unfixed: true
-          image-ref: ghcr.io/baseimage/pythonbaseimage:latest
+          image-ref: ghcr.io/pc-1119/pythonbaseimage:latest
 
       # Step 7: Count vulnerabilities and set step output
       - name: Check for vulnerabilities
@@ -74,7 +74,7 @@ jobs:
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
           echo "Vulnerabilities detected. Patching image with Copacetic..."
-          copa patch --image docker://ghcr.io/baseimage/pythonbaseimage:latest --report report.json
+          copa patch --image docker://ghcr.io/pc-1119/pythonbaseimage:latest --report report.json
 
       # Step 10: Final image check
       - name: Final image check
