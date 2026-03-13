@@ -41,18 +41,26 @@ jobs:
           echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
           echo "Total vulnerabilities found: $VULN_COUNT"
 
-      # Step 6: Install COPA locally
-      - name: Install COPA
+      # Step 6: Install Copacetic (copa binary)
+      - name: Install Copacetic
         run: |
-          wget https://github.com/cyberark/copa/releases/latest/download/copa-linux-amd64
-          chmod +x copa-linux-amd64
-          sudo mv copa-linux-amd64 /usr/local/bin/copa
+          sudo apt-get update
+          sudo apt-get install -y wget tar jq
+          COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
+          ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
+            | jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
+          echo "Installing Copacetic $COPA_VERSION"
+          echo "Asset URL: $ASSET_URL"
+          wget "$ASSET_URL" -O copacetic.tar.gz
+          tar -xzf copacetic.tar.gz
+          sudo mv copa /usr/local/bin/
+          copa --help
 
-      # Step 7: Patch image with COPA if vulnerabilities exist
-      - name: Patch image with COPA
+      # Step 7: Patch image with Copacetic if vulnerabilities exist
+      - name: Patch image with Copacetic
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
-          echo "Vulnerabilities detected. Patching image with COPA..."
+          echo "Vulnerabilities detected. Patching image with Copacetic..."
           copa patch --image pythonbaseimage --report report.json
 
       # Step 8: Final image check
