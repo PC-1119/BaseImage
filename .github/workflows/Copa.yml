@@ -11,13 +11,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       # -----------------------------
-      # Checkout Repository
+      # Checkout repository
       # -----------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # fetch all tags
+          fetch-depth: 0  # fetch all tags for versioning
 
       # -----------------------------
       # Determine Latest Semantic Version
@@ -89,14 +90,21 @@ jobs:
           copa --help
 
       # -----------------------------
-      # Patch Docker Image
+      # Patch Docker Image (with --output)
       # -----------------------------
       - name: Patch Docker Image
         run: |
           copa patch \
             --image docker-archive:./image.tar \
             --report trivy-report.json \
+            --output docker-archive:./image-patched.tar \
             --tag app-image:${{ env.NEW_VERSION }}
+
+      # -----------------------------
+      # Load Patched Image into Docker
+      # -----------------------------
+      - name: Load Patched Image
+        run: docker load -i ./image-patched.tar
 
       # -----------------------------
       # List Images After Patch
@@ -111,9 +119,9 @@ jobs:
         run: trivy image app-image:${{ env.NEW_VERSION }}
 
       # -----------------------------
-      # Show Final Patched Image
+      # Final Output
       # -----------------------------
-      - name: Final Output
+      - name: Show Final Image
         run: |
           echo "Patched image created:"
           echo "app-image:${{ env.NEW_VERSION }}"
