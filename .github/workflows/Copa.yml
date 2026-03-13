@@ -3,7 +3,7 @@ name: Docker Security CI
 on:
   push:
     branches:
-      - '**'  # Trigger on push to any branch
+      - main  # Trigger on push to any branch
 
 jobs:
   trivy-scan-and-build:
@@ -41,14 +41,21 @@ jobs:
           echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
           echo "Total vulnerabilities found: $VULN_COUNT"
 
-      # Step 6: Patch image with COPA if vulnerabilities exist
+      # Step 6: Install COPA locally
+      - name: Install COPA
+        run: |
+          wget https://github.com/cyberark/copa/releases/latest/download/copa-linux-amd64
+          chmod +x copa-linux-amd64
+          sudo mv copa-linux-amd64 /usr/local/bin/copa
+
+      # Step 7: Patch image with COPA if vulnerabilities exist
       - name: Patch image with COPA
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
           echo "Vulnerabilities detected. Patching image with COPA..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker.io/cyberark/copa:latest patch pythonbaseimage
+          copa patch --image pythonbaseimage --report report.json
 
-      # Step 7: Final image check
+      # Step 8: Final image check
       - name: Final image check
         run: |
           docker images | grep pythonbaseimage
