@@ -60,7 +60,8 @@ jobs:
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
           echo "Vulnerabilities detected. Patching image with Copacetic..."
-          copa patch --image docker-daemon:pythonbaseimage:latest --report report.json
+          docker images
+          copa patch --image docker-daemon:pythonbaseimage:latest --report report.json --tag pythonbaseimage:patched
       # Step 8: Final image check
       - name: Final image check
         run: |
