@@ -25,8 +25,6 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t pythonbaseimage:latest .
-          # Tag for GHCR
-          docker tag pythonbaseimage:latest pc-1119/pythonbaseimage:latest
 
       # Step 6: Scan Docker image from GHCR with Trivy
       - name: Generate Trivy Report
@@ -37,7 +35,7 @@ jobs:
           format: 'json'
           output: 'report.json'
           ignore-unfixed: true
-          image-ref: pc-1119/pythonbaseimage:latest
+          image-ref: pythonbaseimage:latest
 
       # Step 7: Count vulnerabilities and set step output
       - name: Check for vulnerabilities
@@ -67,9 +65,9 @@ jobs:
         run: |
           echo "Vulnerabilities detected. Patching image with Copacetic..."
           copa patch \
-            --image docker-daemon://pc-1119/pythonbaseimage:latest \
+            --image docker-daemon:pythonbaseimage:latest \
             --report report.json \
-            --tag pc-1119/pythonbaseimage:prathyusha
+            --tag pythonbaseimage:prathyusha
 
       # Step 10: Final image check
       - name: Final image check
