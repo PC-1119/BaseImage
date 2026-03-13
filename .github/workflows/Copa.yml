@@ -21,10 +21,9 @@ jobs:
         fetch-depth: 0
 
     # -----------------------------
-    # Determine Latest Version
+    # Determine Latest Semantic Version
     # -----------------------------
     - name: Determine Latest Version
-      id: version
       run: |
         git fetch --tags
 
@@ -51,13 +50,13 @@ jobs:
         docker build -t app-image:${{ env.NEW_VERSION }} .
 
     # -----------------------------
-    # Verify Image
+    # Verify Image Exists
     # -----------------------------
     - name: List Docker Images
       run: docker images
 
     # -----------------------------
-    # Install Trivy (Official repo)
+    # Install Trivy
     # -----------------------------
     - name: Install Trivy
       run: |
@@ -67,10 +66,8 @@ jobs:
         wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
           gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
 
-        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] \
-        https://aquasecurity.github.io/trivy-repo/deb \
-        $(lsb_release -sc) main" | \
-        sudo tee /etc/apt/sources.list.d/trivy.list
+        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | \
+          sudo tee /etc/apt/sources.list.d/trivy.list
 
         sudo apt-get update
         sudo apt-get install -y trivy
@@ -89,6 +86,13 @@ jobs:
 
     - name: Show Trivy Report
       run: cat trivy-report.json
+
+    # -----------------------------
+    # Save Image as OCI Archive
+    # -----------------------------
+    - name: Save Image
+      run: |
+        docker save app-image:${{ env.NEW_VERSION }} -o image.tar
 
     # -----------------------------
     # Install Copacetic
@@ -123,19 +127,19 @@ jobs:
       run: docker buildx inspect --bootstrap
 
     # -----------------------------
-    # Patch Docker Image
+    # Patch Image using Copacetic
     # -----------------------------
     - name: Patch Docker Image
       run: |
         copa patch \
-        --image docker-daemon:app-image:${{ env.NEW_VERSION }} \
-        --report trivy-report.json \
-        --tag patched-image:${{ env.NEW_VERSION }}
+          --image oci-archive:image.tar \
+          --report trivy-report.json \
+          --tag patched-image:${{ env.NEW_VERSION }}
 
     # -----------------------------
-    # Show Images After Patch
+    # Load Patched Image
     # -----------------------------
-    - name: List Images After Patch
+    - name: Load Patched Image
       run: docker images
 
     # -----------------------------
@@ -146,9 +150,9 @@ jobs:
         trivy image patched-image:${{ env.NEW_VERSION }}
 
     # -----------------------------
-    # Final Output
+    # Show Final Image
     # -----------------------------
-    - name: Show Final Image
+    - name: Final Output
       run: |
         echo "Patched image created:"
         echo "patched-image:${{ env.NEW_VERSION }}"
