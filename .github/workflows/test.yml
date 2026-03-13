@@ -60,9 +60,9 @@ jobs:
           if [ "$VULN_COUNT" -ne 0 ]; then
             echo "==== Patching Image with Copacetic ===="
             copa patch \
-              --image docker-daemon:$IMAGE \
+              --image docker.io/library/pythonbaseimage:latest \
               --report report.json \
-              --tag pythonbaseimage:patched
+              --tag pythonbaseimage:issokayy
           else
             echo "==== No vulnerabilities found, skipping patch ===="
           fi
