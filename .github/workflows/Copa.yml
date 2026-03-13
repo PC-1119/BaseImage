@@ -9,9 +9,11 @@ jobs:
   trivy-scan-and-build:
     runs-on: ubuntu-latest
     steps:
+      # Step 1: Checkout code
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # Step 2: Set up Docker with containerd BuildKit
       - name: Set up Docker (with containerd BuildKit)
         uses: docker/setup-docker-action@v4
         with:
@@ -24,20 +26,28 @@ jobs:
               }
             }
 
+      # Step 3: Build Docker image
       - name: Build Docker image
         run: |
           docker buildx build --load -t pythonbaseimage:latest .
           docker images | grep pythonbaseimage
 
-      - name: Scan Docker image with Trivy
-        run: |
-          trivy image --format json --output trivy-report.json pythonbaseimage:latest
+      # Step 4: Scan Docker image with Trivy Action
+      - name: Generate Trivy Report
+        uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
+        with:
+          scan-type: 'image'
+          format: 'json'
+          output: 'trivy-report.json'
+          image-ref: 'pythonbaseimage:latest'
 
+      # Step 5: Retag image for Copacetic
       - name: Retag image for Copacetic
         run: |
           docker tag pythonbaseimage:latest docker.io/local/pythonbaseimage:latest
           docker images | grep pythonbaseimage
 
+      # Step 6: Get Docker socket path
       - name: Get Docker socket path
         run: |
           url=$(docker context inspect | jq -r '.[0].Endpoints.docker.Host')
@@ -45,6 +55,7 @@ jobs:
           echo "SOCKET=$socket_path" >> $GITHUB_ENV
           echo "Using Docker socket at: $socket_path"
 
+      # Step 7: Patch image with Copacetic
       - name: Run Copa action
         uses: project-copacetic/copa-action@v1.2.1
         with:
@@ -55,6 +66,7 @@ jobs:
           custom-socket: ${SOCKET}
           output: out.json
 
+      # Step 8: Final image check
       - name: Final image check
         run: |
           echo "Images after patching:"
