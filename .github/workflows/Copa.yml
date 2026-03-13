@@ -22,41 +22,43 @@ jobs:
       - name: Install Podman
         run: |
           sudo apt-get update
-          sudo apt-get install -y podman slirp4netns fuse-overlayfs
+          sudo apt-get install -y podman slirp4netns fuse-overlayfs jq wget curl
           podman --version
 
-      # Step 3: Build image using Podman
+      # Step 3: Build local Podman image
       - name: Build Podman image
         run: |
           podman build -t pythonbaseimage:latest .
           podman images | grep pythonbaseimage
 
-      # Step 4: Save Podman image to tar (for Trivy scanning)
-      - name: Save Podman image to tar
+      # Step 4: Get local image ID for Copa
+      - name: Get Image ID
+        id: get_image_id
         run: |
-          podman save -o pythonbaseimage.tar pythonbaseimage:latest
-          ls -lh pythonbaseimage.tar
+          IMAGE_ID=$(podman images -q pythonbaseimage:latest)
+          echo "IMAGE_ID=$IMAGE_ID" >> $GITHUB_ENV
+          echo "Local image ID: $IMAGE_ID"
 
-      # Step 5: Install Trivy
+      # Step 5: Save image to tar for Trivy
+      - name: Save Podman image to tar
+        run: podman save -o pythonbaseimage.tar pythonbaseimage:latest
+
+      # Step 6: Install Trivy
       - name: Install Trivy
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget gnupg lsb-release
           wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
           echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
           sudo apt-get update
           sudo apt-get install -y trivy
           trivy --version
 
-      # Step 6: Scan the image tar with Trivy using --input
+      # Step 7: Scan the image tar with Trivy
       - name: Scan Podman image tar with Trivy
-        run: |
-          trivy image --input pythonbaseimage.tar --vuln-type os --ignore-unfixed -f json -o trivy-report.json
+        run: trivy image --input pythonbaseimage.tar --vuln-type os --ignore-unfixed -f json -o trivy-report.json
 
-      # Step 7: Install Copacetic
+      # Step 8: Install Copacetic
       - name: Install Copacetic
         run: |
-          sudo apt-get install -y wget jq
           COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
           ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
             | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
@@ -65,16 +67,16 @@ jobs:
           sudo mv copa /usr/local/bin/
           copa --version
 
-      # Step 8: Debug - list Podman images before patch
+      # Step 9: Debug - show Podman images before patch
       - name: Podman images before patch
         run: podman images | grep pythonbaseimage || true
 
-      # Step 9: Patch Podman image using Copa
+      # Step 10: Patch Podman image using Copa (use local image ID)
       - name: Patch Podman image with Copa
         run: |
           set -x
           copa patch \
-            -i pythonbaseimage:latest \
+            -i $IMAGE_ID \
             -r trivy-report.json \
             -t pythonbaseimage:patched \
             --driver=podman \
@@ -82,20 +84,18 @@ jobs:
             --output out.json \
             --debug
 
-      # Step 10: Debug - show Copa output JSON
+      # Step 11: Debug - show Copa output JSON
       - name: Copa output
         run: cat out.json | jq '.'
 
-      # Step 11: List Podman images after patch
+      # Step 12: List Podman images after patch
       - name: List Podman Images After Patch
         run: podman images | grep pythonbaseimage || true
 
-      # Step 12: Scan patched image with Trivy
+      # Step 13: Scan patched image with Trivy
       - name: Scan Patched Image
         run: trivy image --vuln-type os --ignore-unfixed pythonbaseimage:patched
 
-      # Step 13: Show final output
+      # Step 14: Show final output
       - name: Final Output
-        run: |
-          echo "Patched image created:"
-          echo "pythonbaseimage:patched"
+        run: echo "Patched image created: pythonbaseimage:patched"
