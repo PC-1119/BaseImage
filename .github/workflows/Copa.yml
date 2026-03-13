@@ -3,7 +3,7 @@ name: Patch Docker Image
 on:
   push:
     branches:
-      - copaGitOps
+      - main
 
 jobs:
   patch:
