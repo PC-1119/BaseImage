@@ -1,93 +1,65 @@
-name: Docker Security Patch CI
+name: Docker Security CI
 
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - main  # Trigger on push to any branch
 
 jobs:
-  scan-and-patch:
+  trivy-scan-and-build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
     steps:
       # Step 1: Checkout code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Install Docker
-      - name: Set up Docker
-        uses: docker/setup-docker@v3
+      # Step 2: Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      # Step 3: Build local Docker image
+      # Step 3: Build Docker image
       - name: Build Docker image
         run: |
-          docker build -t pythonbaseimage:latest .
-          docker images | grep pythonbaseimage
+          docker buildx build --load -t pythonbaseimage:latest .
+      # Step 4: Scan Docker image with Trivy
+      - name: Generate Trivy Report
+        id: trivy_scan
+        uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
+        with:
+          scan-type: 'image'
+          format: 'json'
+          output: 'report.json'
+          ignore-unfixed: true
+          image-ref: pythonbaseimage:latest
 
-      # Step 4: Get local image ID for Copa
-      - name: Get Image ID
-        id: get_image_id
+      # Step 5: Count vulnerabilities and set step output
+      - name: Check for vulnerabilities
+        id: check_vulns
         run: |
-          IMAGE_ID=$(docker images -q pythonbaseimage:latest)
-          echo "IMAGE_ID=$IMAGE_ID" >> $GITHUB_ENV
-          echo "Local image ID: $IMAGE_ID"
-
-      # Step 5: Save image to tar for Trivy
-      - name: Save Docker image to tar
-        run: docker save -o pythonbaseimage.tar pythonbaseimage:latest
-
-      # Step 6: Install Trivy
-      - name: Install Trivy
-        run: |
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update
-          sudo apt-get install -y trivy
-          trivy --version
-
-      # Step 7: Scan the image tar with Trivy
-      - name: Scan Docker image tar with Trivy
-        run: trivy image --input pythonbaseimage.tar --vuln-type os --ignore-unfixed -f json -o trivy-report.json
-
-      # Step 8: Install Copacetic
+          VULN_COUNT=$(jq '[.Results[].Vulnerabilities[]?] | length' report.json)
+          echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
+          echo "Total vulnerabilities found: $VULN_COUNT"
+      # Step 6: Install Copacetic (copa binary)
       - name: Install Copacetic
         run: |
+          sudo apt-get update
+          sudo apt-get install -y wget tar jq
           COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
           ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
-            | jq -r '.assets[] | select(.name | test("linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
-          wget "$ASSET_URL" -O copa.tar.gz
-          tar -xzf copa.tar.gz
+            | jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
+          echo "Installing Copacetic $COPA_VERSION"
+          echo "Asset URL: $ASSET_URL"
+          wget "$ASSET_URL" -O copacetic.tar.gz
+          tar -xzf copacetic.tar.gz
           sudo mv copa /usr/local/bin/
-          copa --version
-
-      # Step 9: Debug - show Docker images before patch
-      - name: Docker images before patch
-        run: docker images | grep pythonbaseimage || true
-
-      # Step 10: Patch Docker image using Copa (use local image ID)
-      - name: Patch Docker image with Copa
+          copa --help
+      # Step 7: Patch image with Copacetic if vulnerabilities exist
+      - name: Patch image with Copacetic
+        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
-          set -x
-          copa patch \
-            -i $IMAGE_ID \
-            -r trivy-report.json \
-            -t pythonbaseimage:patched \
-            --timeout 5m \
-            --output out.json \
-            --debug
-
-      # Step 11: Debug - show Copa output JSON
-      - name: Copa output
-        run: cat out.json | jq '.'
-
-      # Step 12: List Docker images after patch
-      - name: List Docker Images After Patch
-        run: docker images | grep pythonbaseimage || true
-
-      # Step 13: Scan patched image with Trivy
-      - name: Scan Patched Image
-        run: trivy image --vuln-type os --ignore-unfixed pythonbaseimage:patched
+          echo "Vulnerabilities detected. Patching image with Copacetic..."
+          copa patch --image docker://pythonbaseimage:latest --report report.json
+      # Step 8: Final image check
+      - name: Final image check
+        run: |
+          docker images | grep pythonbaseimage
