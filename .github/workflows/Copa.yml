@@ -132,7 +132,7 @@ jobs:
           else
             echo "HIGH/CRITICAL vulnerabilities remaining in patched image:"
             echo "$PATCH_HIGH_CRITICAL" | jq -r '.[] | "\(.VulnerabilityID) - \(.PkgName) - \(.InstalledVersion) -> \(.FixedVersion)"'
-
+          fi
       # ================================
       # Added ECR Push Stages (Semantic Version)
       # ================================
