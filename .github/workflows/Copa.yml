@@ -87,7 +87,7 @@ jobs:
             --report report.json \
             --tag ghcr.io/pc-1119/pythonbaseimage:prathyusha
 
-      # Step 10: Generate Semantic Version
+      # Step 10: Generate Semantic Versio
       - name: Generate Semantic Version
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         id: semver
