@@ -1,17 +1,16 @@
-FROM debian:bookworm-slim
+FROM ubuntu:18.04
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && \
+    apt-get install -y \
     python3 \
     python3-pip \
-    python3-venv \
-    ca-certificates \
     curl \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    wget \
+    openssl \
+    libssl-dev \
+    git
 
-RUN useradd -r -u 1001 appuser
-
-WORKDIR /app
-USER appuser
+# install old vulnerable python packages
+RUN pip3 install flask==1.0.2 requests==2.19.0
 
 CMD ["python3"]
