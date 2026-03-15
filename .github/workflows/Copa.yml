@@ -132,10 +132,9 @@ jobs:
           else
             echo "HIGH/CRITICAL vulnerabilities remaining in patched image:"
             echo "$PATCH_HIGH_CRITICAL" | jq -r '.[] | "\(.VulnerabilityID) - \(.PkgName) - \(.InstalledVersion) -> \(.FixedVersion)"'
-          fi
 
       # ================================
-      # Added ECR Push Stages (No changes above)
+      # Added ECR Push Stages (Semantic Version)
       # ================================
 
       # Step 15: Configure AWS credentials
@@ -150,6 +149,11 @@ jobs:
       - name: Log in to Amazon ECR
         run: |
           aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 819004394028.dkr.ecr.us-east-1.amazonaws.com
+
+      # Step 16.1: Tag local image for ECR
+      - name: Tag image for ECR
+        run: |
+          docker tag pythonbaseimage:${{ steps.semver.outputs.version }} 819004394028.dkr.ecr.us-east-1.amazonaws.com/pythonbaseimage:${{ steps.semver.outputs.version }}
 
       # Step 17: Push semantic versioned image to ECR
       - name: Push patched image to ECR
