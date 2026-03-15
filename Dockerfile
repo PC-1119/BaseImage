@@ -1,19 +1,19 @@
-# Vulnerable custom base image for CI demo
+# Simple vulnerable base image for CI/demo
 FROM ubuntu:20.04
 
-# Avoid interactive prompts during build
+# Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install outdated system packages (will have vulnerabilities)
+# Install system packages (no version pinning)
 RUN apt-get update && \
     apt-get install -y \
-    python3=3.8.2-0ubuntu2 \
-    python3-pip=20.0.2-5ubuntu1.6 \
+    python3 \
+    python3-pip \
     curl \
     wget \
     git \
-    openssl=1.1.1f-1ubuntu2.17 \
-    libssl-dev=1.1.1f-1ubuntu2.17 \
+    openssl \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install old Python packages with known CVEs
@@ -22,7 +22,7 @@ RUN pip3 install \
     requests==2.19.0 \
     django==2.2.0
 
-# Add a test file to make it non-empty
+# Add a test file
 RUN echo "print('Hello Vulnerable World!')" > /hello.py
 
 # Default command
