@@ -122,7 +122,7 @@ jobs:
           ignore-unfixed: true
           image-ref: ghcr.io/pc-1119/pythonbaseimage:prathyusha
 
-      # Step 14: Check vulnerabilities in patched image
+      # Step 14: Check HIGH/CRITICAL vulnerabilities in patched image
       - name: Check HIGH/CRITICAL vulnerabilities in patched image
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
