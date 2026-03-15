@@ -85,21 +85,44 @@ jobs:
           copa patch \
             --image ghcr.io/pc-1119/pythonbaseimage:latest \
             --report report.json \
-            --tag ghcr.io/pc-1119/pythonbaseimage:patched
+            --tag ghcr.io/pc-1119/pythonbaseimage:prathyusha
 
-      # Step 10: Scan the patched image with Trivy
+      # Step 10: Generate Semantic Version
+      - name: Generate Semantic Version
+        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
+        id: semver
+        run: |
+          VERSION="v1.0.${{ github.run_number }}"
+          echo "Generated version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # Step 11: Rename patched image with semantic version
+      - name: Tag patched image with semantic version
+        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
+        run: |
+          docker tag \
+          ghcr.io/pc-1119/pythonbaseimage:prathyusha \
+          pythonbaseimage:${{ steps.semver.outputs.version }}
+
+      # Step 12: Print final image name (for ECR push verification)
+      - name: Print final semantic image name
+        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
+        run: |
+          echo "Final patched semantic image:"
+          echo "pythonbaseimage:${{ steps.semver.outputs.version }}"
+
+      # Step 13: Scan the patched image with Trivy
       - name: Scan patched image with Trivy
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
-        id: trivy_patch_scan
         uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
         with:
           scan-type: 'image'
           format: 'json'
           output: 'patched_report.json'
           ignore-unfixed: true
-          image-ref: ghcr.io/pc-1119/pythonbaseimage:patched
+          image-ref: ghcr.io/pc-1119/pythonbaseimage:prathyusha
 
-      # Step 11: Check HIGH/CRITICAL vulnerabilities in patched image
+      # Step 14: Check vulnerabilities in patched image
       - name: Check HIGH/CRITICAL vulnerabilities in patched image
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
@@ -110,7 +133,3 @@ jobs:
             echo "HIGH/CRITICAL vulnerabilities remaining in patched image:"
             echo "$PATCH_HIGH_CRITICAL" | jq -r '.[] | "\(.VulnerabilityID) - \(.PkgName) - \(.InstalledVersion) -> \(.FixedVersion)"'
           fi
-
-      # Step 12: Final image check
-      - name: Final image check
-        run: docker images | grep pythonbaseimage
