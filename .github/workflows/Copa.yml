@@ -73,7 +73,7 @@ jobs:
           copa patch \
             --image pythonbaseimage:latest \
             --report report.json \
-            --tag pythonbaseimage:patched
+            --tag pythonbaseimage:prathyusha
 
       # Step 8: Generate Semantic Version
       - name: Generate Semantic Version
@@ -88,7 +88,7 @@ jobs:
       - name: Tag patched image with semantic version
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
-          docker tag pythonbaseimage:patched pythonbaseimage:${{ steps.semver.outputs.version }}
+          docker tag pythonbaseimage:prathyusha pythonbaseimage:${{ steps.semver.outputs.version }}
 
       # Step 10: Print final image name (for verification)
       - name: Print final semantic image name
@@ -106,7 +106,7 @@ jobs:
           format: 'json'
           output: 'patched_report.json'
           ignore-unfixed: true
-          image-ref: pythonbaseimage:patched
+          image-ref: pythonbaseimage:prathyusha
 
       # Step 12: Check HIGH/CRITICAL vulnerabilities in patched image
       - name: Check HIGH/CRITICAL vulnerabilities in patched image
