@@ -17,17 +17,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Set up Docker Buildx
+      # Step 2: Log in to GHCR
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 3: Set up Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Step 3: Build Docker image
+      # Step 4: Build Docker image
       - name: Build Docker image
         run: |
           docker build -t pythonbaseimage:latest .
-          docker tag pythonbaseimage:latest pythonbaseimage:latest
+          docker tag pythonbaseimage:latest ghcr.io/pc-1119/pythonbaseimage:latest
 
-      # Step 4: Scan Docker image with Trivy
+      # Step 5: Push image to GHCR
+      - name: Push image to GHCR
+        run: docker push ghcr.io/pc-1119/pythonbaseimage:latest
+
+      # Step 6: Scan Docker image with Trivy
       - name: Generate Trivy Report
         id: trivy_scan
         uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
@@ -36,9 +48,9 @@ jobs:
           format: 'json'
           output: 'report.json'
           ignore-unfixed: true
-          image-ref: pythonbaseimage:latest
+          image-ref: ghcr.io/pc-1119/pythonbaseimage:latest
 
-      # Step 5: Check for HIGH/CRITICAL vulnerabilities with fixes
+      # Step 7: Check for HIGH/CRITICAL vulnerabilities with fixes
       - name: Check for HIGH/CRITICAL vulnerabilities
         id: check_vulns
         run: |
@@ -51,7 +63,7 @@ jobs:
           fi
           echo "vuln_count=$(echo "$HIGH_CRITICAL_VULNS" | jq 'length')" >> $GITHUB_OUTPUT
 
-      # Step 6: Install Copacetic
+      # Step 8: Install Copacetic
       - name: Install Copacetic
         run: |
           sudo apt-get update
@@ -65,17 +77,17 @@ jobs:
           sudo mv copa /usr/local/bin/
           copa --help
 
-      # Step 7: Patch image with Copacetic if vulnerabilities exist
+      # Step 9: Patch image with Copacetic if vulnerabilities exist
       - name: Patch image with Copacetic
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
           echo "Vulnerabilities detected. Patching image with Copacetic..."
           copa patch \
-            --image pythonbaseimage:latest \
+            --image ghcr.io/pc-1119/pythonbaseimage:latest \
             --report report.json \
-            --tag pythonbaseimage:prathyusha
+            --tag ghcr.io/pc-1119/pythonbaseimage:prathyusha
 
-      # Step 8: Generate Semantic Version
+      # Step 10: Generate Semantic Version
       - name: Generate Semantic Version
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         id: semver
@@ -84,20 +96,22 @@ jobs:
           echo "Generated version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      # Step 9: Tag patched image with semantic version
+      # Step 11: Rename patched image with semantic version
       - name: Tag patched image with semantic version
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
-          docker tag pythonbaseimage:prathyusha pythonbaseimage:${{ steps.semver.outputs.version }}
+          docker tag \
+          ghcr.io/pc-1119/pythonbaseimage:prathyusha \
+          pythonbaseimage:${{ steps.semver.outputs.version }}
 
-      # Step 10: Print final image name (for verification)
+      # Step 12: Print final image name (for ECR push verification)
       - name: Print final semantic image name
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
           echo "Final patched semantic image:"
           echo "pythonbaseimage:${{ steps.semver.outputs.version }}"
 
-      # Step 11: Scan the patched image with Trivy
+      # Step 13: Scan the patched image with Trivy
       - name: Scan patched image with Trivy
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
@@ -106,9 +120,9 @@ jobs:
           format: 'json'
           output: 'patched_report.json'
           ignore-unfixed: true
-          image-ref: pythonbaseimage:prathyusha
+          image-ref: ghcr.io/pc-1119/pythonbaseimage:prathyusha
 
-      # Step 12: Check HIGH/CRITICAL vulnerabilities in patched image
+      # Step 14: Check vulnerabilities in patched image
       - name: Check HIGH/CRITICAL vulnerabilities in patched image
         if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         run: |
@@ -120,7 +134,11 @@ jobs:
             echo "$PATCH_HIGH_CRITICAL" | jq -r '.[] | "\(.VulnerabilityID) - \(.PkgName) - \(.InstalledVersion) -> \(.FixedVersion)"'
           fi
 
-      # Step 13: Configure AWS credentials
+      # ================================
+      # Added ECR Push Stages (No changes above)
+      # ================================
+
+      # Step 15: Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
@@ -128,12 +146,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      # Step 14: Log in to Amazon ECR
+      # Step 16: Log in to Amazon ECR
       - name: Log in to Amazon ECR
         run: |
           aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 819004394028.dkr.ecr.us-east-1.amazonaws.com
 
-      # Step 15: Push semantic versioned image to ECR
+      # Step 17: Push semantic versioned image to ECR
       - name: Push patched image to ECR
         run: |
           docker push 819004394028.dkr.ecr.us-east-1.amazonaws.com/pythonbaseimage:${{ steps.semver.outputs.version }}
