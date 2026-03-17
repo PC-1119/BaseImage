@@ -16,9 +16,6 @@ RUN apt-get update && \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install old Python packages with known CVEs
-RUN pip3 install
-
 # Add a test file
 RUN echo "print('Hello Vulnerable World!')" > /hello.py
 
