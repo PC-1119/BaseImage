@@ -1,21 +1,18 @@
-FROM ubuntu:18.04
+FROM debian:buster
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN sed -i 's|http://archive.ubuntu.com|http://old-releases.ubuntu.com|g' /etc/apt/sources.list && \
-    sed -i 's|http://security.ubuntu.com|http://old-releases.ubuntu.com|g' /etc/apt/sources.list
-
-RUN apt-get -o Acquire::Check-Valid-Until=false update && \
+RUN apt-get update && \
     apt-get install -y \
-    python2 \
+    python \
     python-pip \
     openssl \
     curl \
     wget \
-    bash \
     sudo \
     && rm -rf /var/lib/apt/lists/*
 
+# Add vulnerable package
 RUN pip install flask==0.12
 
-CMD ["python2", "-c", "print('Hello Vulnerable World!')"]
+CMD ["python", "-c", "print('Hello Vulnerable World!')"]
