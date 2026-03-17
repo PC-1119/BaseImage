@@ -17,10 +17,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Install old Python packages with known CVEs
-RUN pip3 install \
-    flask==1.0.2 \
-    requests==2.19.0 \
-    django==2.2.0
+RUN pip3 install
 
 # Add a test file
 RUN echo "print('Hello Vulnerable World!')" > /hello.py
