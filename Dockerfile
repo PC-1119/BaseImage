@@ -1,15 +1,25 @@
-# Vulnerable Alpine 3.4 (old, unpatched)
-FROM alpine:3.4
+FROM ubuntu:20.04
 
-# Update repo index and install basic packages
-RUN apk update && apk add --no-cache \
-    bash \
+# Avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system packages (no version pinning)
+RUN apt-get update && \
+    apt-get install -y \
+    python3 \
+    python3-pip \
     curl \
     wget \
+    git \
     openssl \
-    sudo \
-    ca-certificates
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Add a simple test file
-RUN echo "echo 'Hello Vulnerable OS!'" > /hello.sh
-CMD ["bash", "/hello.sh"]
+# Install old Python packages with known CVEs
+RUN pip3 install \
+    flask==1.0.2 \
+    requests==2.19.0 \
+    django==2.2.0
+
+# Add a test file
+RUN echo "print('Hello Vulnerable World!')" > /hello.py
