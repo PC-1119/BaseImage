@@ -1,23 +1,23 @@
-# Simple vulnerable base image for CI/demo
-FROM ubuntu:20.04
+# Intentionally vulnerable base image (old + EOL)
+FROM ubuntu:18.04
 
-# Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system packages (no version pinning)
+# Install outdated and vulnerable packages
 RUN apt-get update && \
     apt-get install -y \
-    python3 \
-    python3-pip \
+    python2 \
+    python-pip \
+    openssl=1.1.1-1ubuntu2.1~18.04.20 \
+    libssl1.1=1.1.1-1ubuntu2.1~18.04.20 \
     curl \
     wget \
-    git \
-    openssl \
-    libssl-dev \
+    bash \
+    sudo \
+    && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
-# Add a test file
+# Add test file
 RUN echo "print('Hello Vulnerable World!')" > /hello.py
 
-# Default command
-CMD ["python3", "/hello.py"]
+CMD ["python2", "/hello.py"]
