@@ -297,21 +297,21 @@ jobs:
             # Go back to workspace root before API calls
             cd "$WORKSPACE_ROOT"
 
-            # Build PR body with vulnerability report using a temp file
+            # Build PR body with vulnerability report
             PR_BODY_FILE="/tmp/pr_body_${IMAGE_NAME}.txt"
-            cat > "$PR_BODY_FILE" << PRBODY_EOF
-            Automated PR raised by Docker Security CI pipeline.
-
-            Updating new base image version - ${IMAGE_NAME}
-
-            New image:
-            \`\`\`
-            ${NEW_IMAGE}
-            \`\`\`
-
-            ---
-
-            PRBODY_EOF
+            {
+              echo "Automated PR raised by Docker Security CI pipeline."
+              echo ""
+              echo "Updating new base image version - ${IMAGE_NAME}"
+              echo ""
+              echo "New image:"
+              echo '```'
+              echo "${NEW_IMAGE}"
+              echo '```'
+              echo ""
+              echo "---"
+              echo ""
+            } > "$PR_BODY_FILE"
 
             # Append vulnerability report
             if [ -f "vuln-summary/${IMAGE_NAME}.json" ]; then
@@ -319,30 +319,27 @@ jobs:
               HIGH=$(jq -r '.high' "vuln-summary/${IMAGE_NAME}.json")
               TOTAL=$((CRIT + HIGH))
               if [ "$TOTAL" -eq 0 ]; then
-                cat >> "$PR_BODY_FILE" << VULN_EOF
-            ## ✅ Base Image Vulnerability Report
-
-            **NO HIGH/CRITICAL VULNERABILITIES FOUND IN BASEIMAGE**
-            VULN_EOF
+                {
+                  echo "## ✅ Base Image Vulnerability Report"
+                  echo ""
+                  echo "**NO HIGH/CRITICAL VULNERABILITIES FOUND IN BASEIMAGE**"
+                } >> "$PR_BODY_FILE"
               else
-                cat >> "$PR_BODY_FILE" << VULN_EOF
-            ## ⚠️ Base Image Vulnerability Report
-
-            | Severity | Count |
-            |----------|-------|
-            | 🔴 Critical | ${CRIT} |
-            | 🟠 High | ${HIGH} |
-            | **Total** | **${TOTAL}** |
-
-            > These are OS-level vulnerabilities remaining after Copa auto-patching.
-            VULN_EOF
+                {
+                  echo "## ⚠️ Base Image Vulnerability Report"
+                  echo ""
+                  echo "| Severity | Count |"
+                  echo "|----------|-------|"
+                  echo "| 🔴 Critical | ${CRIT} |"
+                  echo "| 🟠 High | ${HIGH} |"
+                  echo "| **Total** | **${TOTAL}** |"
+                  echo ""
+                  echo "> These are OS-level vulnerabilities remaining after Copa auto-patching."
+                } >> "$PR_BODY_FILE"
               fi
             else
               echo "No scan data available for this image." >> "$PR_BODY_FILE"
             fi
-
-            # Remove leading whitespace from heredoc
-            sed -i 's/^            //' "$PR_BODY_FILE"
 
             echo "PR body content:"
             cat "$PR_BODY_FILE"
