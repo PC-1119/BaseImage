@@ -6,7 +6,7 @@
     "image_name": "pythonbaseimage"
   },
   {
-    "repo": "PC-1119/dummy2",
+    "repo": "PC-1119/dumm2",
     "dockerfile_path": "dockerfile",
     "branch": "main",
     "image_name": "nodebaseimage"
