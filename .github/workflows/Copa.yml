@@ -306,6 +306,8 @@ jobs:
             REVIEWERS=$(echo "$entry" | jq -c '.reviewers // []')
             if [ "$PR_NUMBER" != "null" ] && [ -n "$PR_NUMBER" ]; then
               echo "PR #$PR_NUMBER created."
+
+              # Add reviewers
               if [ "$REVIEWERS" != "[]" ]; then
                 echo "Adding reviewers: $REVIEWERS"
                 curl -s -X POST \
@@ -313,6 +315,29 @@ jobs:
                   -H "Accept: application/vnd.github+json" \
                   "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}/requested_reviewers" \
                   -d "{\"reviewers\": $REVIEWERS}"
+              fi
+
+              # Post vulnerability summary as PR comment
+              VULN_FILE="vuln-summary/${IMAGE_NAME}.json"
+              if [ -f "$VULN_FILE" ]; then
+                CRIT=$(jq -r '.critical' "$VULN_FILE")
+                HIGH=$(jq -r '.high' "$VULN_FILE")
+                TOTAL=$((CRIT + HIGH))
+
+                if [ "$TOTAL" -eq 0 ]; then
+                  COMMENT="## ✅ Base Image Vulnerability Report - \`${IMAGE_NAME}\`\n\n**NO HIGH/CRITICAL VULNERABILITIES FOUND IN BASEIMAGE**\n\nImage: \`${NEW_IMAGE}\`"
+                else
+                  COMMENT="## ⚠️ Base Image Vulnerability Report - \`${IMAGE_NAME}\`\n\n| Severity | Count |\n|----------|-------|\n| 🔴 Critical | ${CRIT} |\n| 🟠 High | ${HIGH} |\n| **Total** | **${TOTAL}** |\n\nImage: \`${NEW_IMAGE}\`\n\n> These are **OS-level vulnerabilities** remaining after Copa auto-patching. Library vulnerabilities require updating application dependencies."
+                fi
+
+                curl -s -X POST \
+                  -H "Authorization: token ${PAT_TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments" \
+                  -d "$(jq -n --arg body "$COMMENT" '{body: $body}')"
+                echo "Vulnerability comment posted on PR #$PR_NUMBER"
+              else
+                echo "WARNING: No vuln-summary found for $IMAGE_NAME"
               fi
             else
               echo "WARNING: Failed to create PR for $REPO. Response: $PR_RESPONSE"
