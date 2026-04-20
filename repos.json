@@ -2,6 +2,13 @@
   {
     "repo": "PC-1119/dummy3",
     "dockerfile_path": "dockerfile",
-    "branch": "main"
+    "branch": "main",
+    "image_name": "pythonbaseimage"
+  },
+  {
+    "repo": "PC-1119/dummy2",
+    "dockerfile_path": "dockerfile",
+    "branch": "main",
+    "image_name": "nodebaseimage"
   }
 ]
