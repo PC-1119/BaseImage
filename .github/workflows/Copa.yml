@@ -245,8 +245,14 @@ jobs:
           ECR_REPO_PREFIX: base-images
         run: |
           WORKSPACE_ROOT="$(pwd)"
+          echo "Workspace root: $WORKSPACE_ROOT"
+          echo "Vuln summary files:"
+          ls -la vuln-summary/ || echo "vuln-summary directory not found!"
+
           echo "Reading repos.json..."
-          cat repos.json | jq -c '.[]' | while read -r entry; do
+          # Write entries to temp file to avoid subshell issues with piped while loops
+          jq -c '.[]' repos.json > /tmp/repos_entries.txt
+          while read -r entry; do
             REPO=$(echo "$entry" | jq -r '.repo')
             DOCKERFILE_PATH=$(echo "$entry" | jq -r '.dockerfile_path')
             TARGET_BRANCH=$(echo "$entry" | jq -r '.branch')
@@ -355,4 +361,4 @@ jobs:
             echo "PR created for $REPO ($IMAGE_NAME)"
 
             rm -rf "$REPO_DIR"
-          done
+          done < /tmp/repos_entries.txt
