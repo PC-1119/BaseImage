@@ -160,3 +160,79 @@ jobs:
       - name: Push patched image to ECR
         run: |
           docker push 819004394028.dkr.ecr.us-east-1.amazonaws.com/pythonbaseimage:${{ steps.semver.outputs.version }}
+
+      # ================================
+      # Update Application Dockerfiles in Multiple Repos & Raise PRs
+      # ================================
+
+      # Step 18: Update Dockerfiles across all repos listed in repos.json
+      - name: Update Dockerfiles and raise PRs
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          NEW_TAG: ${{ steps.semver.outputs.version }}
+        run: |
+          NEW_IMAGE="819004394028.dkr.ecr.us-east-1.amazonaws.com/pythonbaseimage:${NEW_TAG}"
+          BRANCH_NAME="update-base-image-${NEW_TAG}"
+
+          echo "ECR image: $NEW_IMAGE"
+          echo "Reading repos.json..."
+          REPOS=$(cat repos.json)
+          echo "$REPOS" | jq -c '.[]' | while read -r entry; do
+            REPO=$(echo "$entry" | jq -r '.repo')
+            DOCKERFILE_PATH=$(echo "$entry" | jq -r '.dockerfile_path')
+            TARGET_BRANCH=$(echo "$entry" | jq -r '.branch')
+
+            echo "============================================"
+            echo "Processing repo: $REPO"
+            echo "Dockerfile: $DOCKERFILE_PATH"
+            echo "Target branch: $TARGET_BRANCH"
+            echo "============================================"
+
+            # Clone the repo
+            REPO_DIR="app-repo-$(echo $REPO | tr '/' '-')"
+            git clone --branch "$TARGET_BRANCH" "https://x-access-token:${PAT_TOKEN}@github.com/${REPO}.git" "$REPO_DIR"
+
+            cd "$REPO_DIR"
+
+            # Create a new branch for the PR
+            git checkout -b "$BRANCH_NAME"
+
+            # Update the FROM line in the Dockerfile
+            echo "Updating FROM line to: $NEW_IMAGE"
+            sed -i "s|^FROM .*|FROM $NEW_IMAGE|" "$DOCKERFILE_PATH"
+
+            # Check if there are changes
+            if git diff --quiet; then
+              echo "No changes detected in $REPO. Skipping."
+              cd ..
+              rm -rf "$REPO_DIR"
+              continue
+            fi
+
+            # Commit and push the new branch
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$DOCKERFILE_PATH"
+            git commit -m "chore: update base image to ${NEW_IMAGE}"
+            git push origin "$BRANCH_NAME"
+
+            # Create a Pull Request using GitHub API
+            PR_TITLE="chore: update base image to ${NEW_IMAGE}"
+            PR_BODY="Automated PR raised by Docker Security CI pipeline.\n\nUpdates the base image in \`${DOCKERFILE_PATH}\` to:\n\`\`\`\n${NEW_IMAGE}\n\`\`\`"
+
+            curl -s -X POST \
+              -H "Authorization: token ${PAT_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${REPO}/pulls" \
+              -d "$(jq -n \
+                --arg title "$PR_TITLE" \
+                --arg body "$PR_BODY" \
+                --arg head "$BRANCH_NAME" \
+                --arg base "$TARGET_BRANCH" \
+                '{title: $title, body: $body, head: $head, base: $base}')"
+
+            echo "PR created for $REPO"
+
+            cd ..
+            rm -rf "$REPO_DIR"
+          done
