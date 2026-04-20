@@ -288,6 +288,9 @@ jobs:
             git commit -m "chore: update ${IMAGE_NAME} base image to ${NEW_TAG}"
             git push origin "$BRANCH_NAME"
 
+            # Go back to workspace root before API calls
+            cd "$WORKSPACE_ROOT"
+
             # Create a Pull Request using GitHub API
             PR_TITLE="updating new base image version - ${IMAGE_NAME}"
             PR_BODY=$(printf "Automated PR raised by Docker Security CI pipeline.\n\nUpdating new base image version - ${IMAGE_NAME}\n\nNew image:\n\`\`\`\n${NEW_IMAGE}\n\`\`\`")
@@ -302,6 +305,8 @@ jobs:
                 --arg head "$BRANCH_NAME" \
                 --arg base "$TARGET_BRANCH" \
                 '{title: $title, body: $body, head: $head, base: $base}')")
+
+            echo "PR API Response: $PR_RESPONSE"
 
             PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
             REVIEWERS=$(echo "$entry" | jq -c '.reviewers // []')
@@ -319,7 +324,9 @@ jobs:
               fi
 
               # Post vulnerability summary as PR comment
-              VULN_FILE="${WORKSPACE_ROOT}/vuln-summary/${IMAGE_NAME}.json"
+              VULN_FILE="vuln-summary/${IMAGE_NAME}.json"
+              echo "Looking for vuln file: $VULN_FILE"
+              ls -la vuln-summary/ || echo "vuln-summary directory not found"
               if [ -f "$VULN_FILE" ]; then
                 CRIT=$(jq -r '.critical' "$VULN_FILE")
                 HIGH=$(jq -r '.high' "$VULN_FILE")
@@ -331,14 +338,15 @@ jobs:
                   COMMENT=$(printf "## ⚠️ Base Image Vulnerability Report - \`${IMAGE_NAME}\`\n\n| Severity | Count |\n|----------|-------|\n| 🔴 Critical | ${CRIT} |\n| 🟠 High | ${HIGH} |\n| **Total** | **${TOTAL}** |\n\nImage: \`${NEW_IMAGE}\`\n\n> These are **OS-level vulnerabilities** remaining after Copa auto-patching. Library vulnerabilities require updating application dependencies.")
                 fi
 
-                curl -s -X POST \
+                echo "Posting comment to PR #$PR_NUMBER..."
+                COMMENT_RESPONSE=$(curl -s -X POST \
                   -H "Authorization: token ${PAT_TOKEN}" \
                   -H "Accept: application/vnd.github+json" \
                   "https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments" \
-                  -d "$(jq -n --arg body "$COMMENT" '{body: $body}')"
-                echo "Vulnerability comment posted on PR #$PR_NUMBER"
+                  -d "$(jq -n --arg body "$COMMENT" '{body: $body}')")
+                echo "Comment API Response: $COMMENT_RESPONSE"
               else
-                echo "WARNING: No vuln-summary found for $IMAGE_NAME"
+                echo "WARNING: No vuln-summary found for $IMAGE_NAME at $VULN_FILE"
               fi
             else
               echo "WARNING: Failed to create PR for $REPO. Response: $PR_RESPONSE"
@@ -346,6 +354,5 @@ jobs:
 
             echo "PR created for $REPO ($IMAGE_NAME)"
 
-            cd ..
             rm -rf "$REPO_DIR"
           done
