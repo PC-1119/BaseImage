@@ -3,12 +3,14 @@
     "repo": "PC-1119/dummy3",
     "dockerfile_path": "dockerfile",
     "branch": "main",
-    "image_name": "pythonbaseimage"
+    "image_name": "pythonbaseimage",
+    "reviewers": ["Ajay-2702"]
   },
   {
     "repo": "PC-1119/dumm2",
     "dockerfile_path": "Dockerfile",
     "branch": "main",
-    "image_name": "nodebaseimage"
+    "image_name": "nodebaseimage",
+    "reviewers": ["Ajay-2702"]
   }
 ]
