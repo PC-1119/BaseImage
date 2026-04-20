@@ -1,191 +1,253 @@
 name: Docker Security CI
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
 
-permissions:
-  contents: read
-  packages: write
-
 jobs:
-  trivy-scan-and-build:
+  build-scan-patch:
     runs-on: ubuntu-latest
+    environment: BaseImages
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+      ECR_REPO_PREFIX: base-images
     steps:
-      # Step 1: Checkout code
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # Step 2: Log in to GHCR
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Step 3: Set up Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # Step 4: Build Docker image
-      - name: Build Docker image
+      - name: Enable containerd image store
         run: |
-          docker build -t pythonbaseimage:latest .
-          docker tag pythonbaseimage:latest ghcr.io/pc-1119/pythonbaseimage:latest
+          echo '{"features": {"containerd-snapshotter": true}}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          docker info | grep -i snapshotter
 
-      # Step 5: Push image to GHCR
-      - name: Push image to GHCR
-        run: docker push ghcr.io/pc-1119/pythonbaseimage:latest
-
-      # Step 6: Scan Docker image with Trivy
-      - name: Generate Trivy Report
-        id: trivy_scan
-        uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
-        with:
-          scan-type: 'image'
-          format: 'json'
-          output: 'report.json'
-          ignore-unfixed: true
-          image-ref: ghcr.io/pc-1119/pythonbaseimage:latest
-
-      # Step 7: Check for HIGH/CRITICAL vulnerabilities with fixes
-      - name: Check for HIGH/CRITICAL vulnerabilities
-        id: check_vulns
+      - name: Install tools
         run: |
-          HIGH_CRITICAL_VULNS=$(jq '[.Results[].Vulnerabilities[]? | select((.Severity=="HIGH" or .Severity=="CRITICAL") and .FixedVersion != null)]' report.json)
-          if [ "$HIGH_CRITICAL_VULNS" = "[]" ]; then
-            echo "No HIGH/CRITICAL vulnerabilities with available fixes found."
-          else
-            echo "HIGH/CRITICAL vulnerabilities with fixes in original image:"
-            echo "$HIGH_CRITICAL_VULNS" | jq -r '.[] | "\(.VulnerabilityID) - \(.PkgName) - \(.InstalledVersion) -> \(.FixedVersion)"'
-          fi
-          echo "vuln_count=$(echo "$HIGH_CRITICAL_VULNS" | jq 'length')" >> $GITHUB_OUTPUT
+          # Install Trivy
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+          trivy --version
 
-      # Step 8: Install Copacetic
-      - name: Install Copacetic
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget tar jq
-          COPA_VERSION=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest | jq -r .tag_name)
+          # Install Copa
+          sudo apt-get update && sudo apt-get install -y wget tar jq
           ASSET_URL=$(curl -s https://api.github.com/repos/project-copacetic/copacetic/releases/latest \
             | jq -r '.assets[] | select(.name | test("copa_.*linux_amd64.tar.gz$")) | .browser_download_url' | head -n 1)
-          echo "Installing Copacetic $COPA_VERSION"
-          wget "$ASSET_URL" -O copacetic.tar.gz
+          wget -q "$ASSET_URL" -O copacetic.tar.gz
           tar -xzf copacetic.tar.gz
           sudo mv copa /usr/local/bin/
-          copa --help
+          copa --version || true
 
-      # Step 9: Patch image with Copacetic if vulnerabilities exist
-      - name: Patch image with Copacetic
-        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
+      - name: Discover images
+        id: discover
         run: |
-          echo "Vulnerabilities detected. Patching image with Copacetic..."
-          copa patch \
-            --image ghcr.io/pc-1119/pythonbaseimage:latest \
-            --report report.json \
-            --tag ghcr.io/pc-1119/pythonbaseimage:prathyusha
+          IMAGES=$(find base-images -maxdepth 2 -name Dockerfile -printf '%h\n' | xargs -I{} basename {} | sort -u | tr '\n' ' ' | xargs)
+          echo "Discovered images: $IMAGES"
+          echo "images=$IMAGES" >> $GITHUB_OUTPUT
 
-      # Step 10: Generate Semantic Versio
+      - name: Build all Docker images
+        run: |
+          PIDS=()
+          IMAGES_ARR=()
+          for IMAGE in ${{ steps.discover.outputs.images }}; do
+            echo "Building $IMAGE..."
+            docker build --provenance=false --sbom=false -t "${IMAGE}:latest" "base-images/${IMAGE}/" &
+            PIDS+=($!)
+            IMAGES_ARR+=("$IMAGE")
+          done
+          for i in "${!PIDS[@]}"; do
+            if wait "${PIDS[$i]}"; then
+              echo "${IMAGES_ARR[$i]} built successfully"
+            else
+              echo "${IMAGES_ARR[$i]} build failed"
+              exit 1
+            fi
+          done
+
+      - name: Create shared vulnerability helper
+        run: |
+          cat > /tmp/vuln_helpers.sh << 'HELPERS_EOF'
+          # Print a formatted table of fixable vulnerabilities with aligned header
+          # Usage: print_vuln_table <scan_file> [severity_filter]
+          # severity_filter: comma-separated e.g. "HIGH,CRITICAL" or empty for all
+          print_vuln_table() {
+            local scan_file="$1" sev_filter="${2:-}"
+            # Header row (tab-separated so column -t aligns it with data)
+            echo -e "CVEID\tSEVERITY\tPRESENT VERSION\tFIXED VERSION\tPACKAGE\tOS/LIBRARY"
+            echo -e "-----\t--------\t---------------\t-------------\t-------\t----------"
+            if [ -n "$sev_filter" ]; then
+              local jq_sevs
+              jq_sevs=$(echo "$sev_filter" | jq -R 'split(",")')
+              jq -r --argjson sevs "$jq_sevs" '
+                [.Results[]? | (.Class // "unknown") as $class |
+                  .Vulnerabilities[]? |
+                  select(.FixedVersion != null and .FixedVersion != "") |
+                  select(.Severity as $s | $sevs | index($s)) |
+                  {
+                    id: .VulnerabilityID,
+                    sev: .Severity,
+                    installed: (.InstalledVersion // "N/A"),
+                    fixed: .FixedVersion,
+                    pkg: .PkgName,
+                    class: (if $class == "os-pkgs" then "OS" elif $class == "lang-pkgs" then "Library" else $class end)
+                  }
+                ] | sort_by(.sev) | reverse | .[] |
+                "\(.id)\t\(.sev)\t\(.installed)\t\(.fixed)\t\(.pkg)\t\(.class)"' "$scan_file"
+            else
+              jq -r '
+                [.Results[]? | (.Class // "unknown") as $class |
+                  .Vulnerabilities[]? |
+                  select(.FixedVersion != null and .FixedVersion != "") |
+                  {
+                    id: .VulnerabilityID,
+                    sev: .Severity,
+                    installed: (.InstalledVersion // "N/A"),
+                    fixed: .FixedVersion,
+                    pkg: .PkgName,
+                    class: (if $class == "os-pkgs" then "OS" elif $class == "lang-pkgs" then "Library" else $class end)
+                  }
+                ] | sort_by(.sev) | reverse | .[] |
+                "\(.id)\t\(.sev)\t\(.installed)\t\(.fixed)\t\(.pkg)\t\(.class)"' "$scan_file"
+            fi
+          }
+
+          # Count fixable vulns with optional class and severity filter
+          count_fixable() {
+            local scan_file="$1" class="${2:-}" severity="${3:-}"
+            local filter="select(.FixedVersion != null and .FixedVersion != \"\")"
+            if [ -n "$severity" ]; then
+              filter="$filter | select(.Severity==\"$severity\")"
+            fi
+            if [ -n "$class" ]; then
+              jq --arg cls "$class" "[.Results[]? | select(.Class==\$cls) | .Vulnerabilities[]? | $filter] | length" "$scan_file"
+            else
+              jq "[.Results[]? | .Vulnerabilities[]? | $filter] | length" "$scan_file"
+            fi
+          }
+          HELPERS_EOF
+          chmod +x /tmp/vuln_helpers.sh
+
+      - name: Trivy scan all images
+        run: |
+          source /tmp/vuln_helpers.sh
+          mkdir -p vuln-summary
+          for IMAGE in ${{ steps.discover.outputs.images }}; do
+            echo "Scanning $IMAGE..."
+            trivy image --format json --output "${IMAGE}_trivy.json" --ignore-unfixed "${IMAGE}:latest"
+            echo "$IMAGE scan complete"
+
+            OS_TOTAL=$(count_fixable "${IMAGE}_trivy.json" "os-pkgs")
+            LIB_TOTAL=$(count_fixable "${IMAGE}_trivy.json" "lang-pkgs")
+            TOTAL=$((OS_TOTAL + LIB_TOTAL))
+
+            echo ""
+            echo "================================================================"
+            echo "  $IMAGE - Vulnerabilities)"
+            echo "  OS: $OS_TOTAL | Library: $LIB_TOTAL | Total: $TOTAL"
+            echo "================================================================"
+            if [ "$TOTAL" -gt 0 ]; then
+              print_vuln_table "${IMAGE}_trivy.json" | column -t -s $'\t'
+            else
+              echo "  No fixable vulnerabilities found."
+            fi
+            echo "================================================================"
+
+            echo "${TOTAL}" > "${IMAGE}_vuln_count.txt"
+
+            # Write initial vuln-summary (overwritten by post-patch scan if image gets patched)
+            TOTAL_CRIT=$(count_fixable "${IMAGE}_trivy.json" "" "CRITICAL")
+            TOTAL_HIGH=$(count_fixable "${IMAGE}_trivy.json" "" "HIGH")
+            TOTAL_HC=$((TOTAL_CRIT + TOTAL_HIGH))
+            jq -n --arg img "$IMAGE" --argjson c "$TOTAL_CRIT" --argjson h "$TOTAL_HIGH" --argjson t "$TOTAL_HC" \
+              '{image: $img, critical: $c, high: $h, total: $t}' > "vuln-summary/${IMAGE}.json"
+          done
+
+      - name: Copa patch vulnerable images
+        run: |
+          for IMAGE in ${{ steps.discover.outputs.images }}; do
+            VULN_COUNT=$(cat "${IMAGE}_vuln_count.txt")
+            if [ "$VULN_COUNT" -eq 0 ]; then
+              echo "$IMAGE - no vulnerabilities, skipping patch"
+              continue
+            fi
+            echo "Patching $IMAGE..."
+            copa patch --image "${IMAGE}:latest" --report "${IMAGE}_trivy.json" --tag "${IMAGE}:patched"
+            echo "$IMAGE patched"
+          done
+
+      - name: Scan patched images with Trivy
+        run: |
+          source /tmp/vuln_helpers.sh
+          for IMAGE in ${{ steps.discover.outputs.images }}; do
+            VULN_COUNT=$(cat "${IMAGE}_vuln_count.txt")
+            if [ "$VULN_COUNT" -eq 0 ]; then
+              echo "$IMAGE - was clean, skipping re-scan"
+              continue
+            fi
+            echo "Re-scanning $IMAGE (patched)..."
+            trivy image --format json --output "${IMAGE}_patched_trivy.json" --ignore-unfixed "${IMAGE}:patched"
+            echo "$IMAGE patched scan complete"
+
+            TOTAL_CRIT=$(count_fixable "${IMAGE}_patched_trivy.json" "" "CRITICAL")
+            TOTAL_HIGH=$(count_fixable "${IMAGE}_patched_trivy.json" "" "HIGH")
+            TOTAL_HC=$((TOTAL_CRIT + TOTAL_HIGH))
+
+            echo ""
+            echo "================================================================"
+            echo "  $IMAGE - Post-Patch Remaining (HIGH/CRITICAL Only)"
+            echo "  Critical: $TOTAL_CRIT | High: $TOTAL_HIGH | Total: $TOTAL_HC"
+            echo "================================================================"
+            if [ "$TOTAL_HC" -gt 0 ]; then
+              print_vuln_table "${IMAGE}_patched_trivy.json" "HIGH,CRITICAL" | column -t -s $'\t'
+              echo "================================================================"
+              echo "  Note: Library vulnerabilities require updating application dependencies."
+            else
+              echo "  All HIGH/CRITICAL vulnerabilities have been patched!"
+            fi
+            echo "================================================================"
+
+            jq -n --arg img "$IMAGE" --argjson c "$TOTAL_CRIT" --argjson h "$TOTAL_HIGH" --argjson t "$TOTAL_HC" \
+              '{image: $img, critical: $c, high: $h, total: $t}' > "vuln-summary/${IMAGE}.json"
+          done
+
       - name: Generate Semantic Version
-        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
         id: semver
         run: |
-          VERSION="v1.0.${{ github.run_number }}"
-          echo "Generated version: $VERSION"
+          RUN=${{ github.run_number }}
+          MAJOR=$(( RUN / 10000 + 1 ))
+          MINOR=$(( (RUN % 10000) / 100 ))
+          PATCH=$(( RUN % 100 ))
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "Semantic version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      # Step 11: Rename patched image with semantic version
-      - name: Tag patched image with semantic version
-        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
-        run: |
-          docker tag \
-          ghcr.io/pc-1119/pythonbaseimage:prathyusha \
-          pythonbaseimage:${{ steps.semver.outputs.version }}
-
-      # Step 12: Print final image name (for ECR push verification)
-      - name: Print final semantic image name
-        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
-        run: |
-          echo "Final patched semantic image:"
-          echo "pythonbaseimage:${{ steps.semver.outputs.version }}"
-
-      # Step 13: Scan the patched image with Trivy
-      - name: Scan patched image with Trivy
-        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
-        uses: aquasecurity/trivy-action@69cbbc0cbbf6a2b0bab8dcf0e9f2d7ead08e87e4
-        with:
-          scan-type: 'image'
-          format: 'json'
-          output: 'patched_report.json'
-          ignore-unfixed: true
-          image-ref: ghcr.io/pc-1119/pythonbaseimage:prathyusha
-
-      # Step 14: Check HIGH/CRITICAL vulnerabilities in patched image
-      - name: Check HIGH/CRITICAL vulnerabilities in patched image
-        if: ${{ steps.check_vulns.outputs.vuln_count != '0' }}
-        run: |
-          PATCH_HIGH_CRITICAL=$(jq '[.Results[].Vulnerabilities[]? | select((.Severity=="HIGH" or .Severity=="CRITICAL") and .FixedVersion != null)]' patched_report.json)
-          if [ "$PATCH_HIGH_CRITICAL" = "[]" ]; then
-            echo "No HIGH/CRITICAL vulnerabilities with available fixes found in patched image."
-          else
-            echo "HIGH/CRITICAL vulnerabilities remaining in patched image:"
-            echo "$PATCH_HIGH_CRITICAL" | jq -r '.[] | "\(.VulnerabilityID) - \(.PkgName) - \(.InstalledVersion) -> \(.FixedVersion)"'
-          fi
-      # ================================
-      # ECR Push Stages (Commented out for testing)
-      # ================================
-
-      # # Step 15: Configure AWS credentials
-      # - name: Configure AWS credentials
-      #   uses: aws-actions/configure-aws-credentials@v3
-      #   with:
-      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      #     aws-region: us-east-1
-
-      # # Step 16: Log in to Amazon ECR
-      # - name: Log in to Amazon ECR
-      #   run: |
-      #     aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 819004394028.dkr.ecr.us-east-1.amazonaws.com
-
-      # # Step 16.1: Tag local image for ECR
-      # - name: Tag image for ECR
-      #   run: |
-      #     docker tag pythonbaseimage:${{ steps.semver.outputs.version }} 819004394028.dkr.ecr.us-east-1.amazonaws.com/pythonbaseimage:${{ steps.semver.outputs.version }}
-
-      # # Step 17: Push semantic versioned image to ECR
-      # - name: Push patched image to ECR
-      #   run: |
-      #     docker push 819004394028.dkr.ecr.us-east-1.amazonaws.com/pythonbaseimage:${{ steps.semver.outputs.version }}
 
       # ================================
       # Update Application Dockerfiles in Multiple Repos & Raise PRs
       # ================================
 
-      # Step 18: Update Dockerfiles across all repos listed in repos.json
       - name: Update Dockerfiles and raise PRs
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           NEW_TAG: ${{ steps.semver.outputs.version }}
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+          ECR_REPO_PREFIX: base-images
         run: |
-          NEW_IMAGE="819004394028.dkr.ecr.us-east-1.amazonaws.com/pythonbaseimage:${NEW_TAG}"
-          BRANCH_NAME="update-base-image-${NEW_TAG}"
-
-          echo "ECR image: $NEW_IMAGE"
           echo "Reading repos.json..."
-          REPOS=$(cat repos.json)
-          echo "$REPOS" | jq -c '.[]' | while read -r entry; do
+          cat repos.json | jq -c '.[]' | while read -r entry; do
             REPO=$(echo "$entry" | jq -r '.repo')
             DOCKERFILE_PATH=$(echo "$entry" | jq -r '.dockerfile_path')
             TARGET_BRANCH=$(echo "$entry" | jq -r '.branch')
+            IMAGE_NAME=$(echo "$entry" | jq -r '.image_name')
+            NEW_IMAGE="${ECR_REGISTRY}/${ECR_REPO_PREFIX}/${IMAGE_NAME}:${NEW_TAG}"
+            BRANCH_NAME="update-${IMAGE_NAME}-${NEW_TAG}"
 
             echo "============================================"
-            echo "Processing repo: $REPO"
+            echo "Repo: $REPO"
+            echo "Image: $IMAGE_NAME -> $NEW_IMAGE"
             echo "Dockerfile: $DOCKERFILE_PATH"
-            echo "Target branch: $TARGET_BRANCH"
+            echo "Branch: $TARGET_BRANCH"
             echo "============================================"
 
             # Clone the repo
@@ -198,8 +260,7 @@ jobs:
             git checkout -b "$BRANCH_NAME"
 
             # Update the FROM line in the Dockerfile
-            echo "Updating FROM line to: $NEW_IMAGE"
-            sed -i "s|^FROM .*|FROM $NEW_IMAGE|" "$DOCKERFILE_PATH"
+            sed -i "s|^FROM .*|FROM ${NEW_IMAGE}|i" "$DOCKERFILE_PATH"
 
             # Check if there are changes
             if git diff --quiet; then
@@ -213,11 +274,11 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add "$DOCKERFILE_PATH"
-            git commit -m "chore: update base image to ${NEW_IMAGE}"
+            git commit -m "chore: update ${IMAGE_NAME} base image to ${NEW_TAG}"
             git push origin "$BRANCH_NAME"
 
             # Create a Pull Request using GitHub API
-            PR_TITLE="chore: update base image to ${NEW_IMAGE}"
+            PR_TITLE="chore: update ${IMAGE_NAME} base image to ${NEW_TAG}"
             PR_BODY="Automated PR raised by Docker Security CI pipeline.\n\nUpdates the base image in \`${DOCKERFILE_PATH}\` to:\n\`\`\`\n${NEW_IMAGE}\n\`\`\`"
 
             curl -s -X POST \
@@ -231,7 +292,7 @@ jobs:
                 --arg base "$TARGET_BRANCH" \
                 '{title: $title, body: $body, head: $head, base: $base}')"
 
-            echo "PR created for $REPO"
+            echo "PR created for $REPO ($IMAGE_NAME)"
 
             cd ..
             rm -rf "$REPO_DIR"
