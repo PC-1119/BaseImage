@@ -173,8 +173,11 @@ jobs:
               continue
             fi
             echo "Patching $IMAGE..."
-            copa patch --image "${IMAGE}:latest" --report "${IMAGE}_trivy.json" --tag "${IMAGE}:patched"
-            echo "$IMAGE patched"
+            if copa patch --image "${IMAGE}:latest" --report "${IMAGE}_trivy.json" --tag "${IMAGE}:patched"; then
+              echo "$IMAGE patched successfully"
+            else
+              echo "WARNING: Copa patch failed for $IMAGE. Continuing with unpatched image."
+            fi
           done
 
       - name: Scan patched images with Trivy
@@ -186,6 +189,13 @@ jobs:
               echo "$IMAGE - was clean, skipping re-scan"
               continue
             fi
+
+            # Skip if patched image was not created (Copa patch failed)
+            if ! docker image inspect "${IMAGE}:patched" > /dev/null 2>&1; then
+              echo "WARNING: ${IMAGE}:patched not found. Copa patch may have failed. Skipping re-scan."
+              continue
+            fi
+
             echo "Re-scanning $IMAGE (patched)..."
             trivy image --format json --output "${IMAGE}_patched_trivy.json" --ignore-unfixed "${IMAGE}:patched"
             echo "$IMAGE patched scan complete"
