@@ -288,8 +288,8 @@ jobs:
             git push origin "$BRANCH_NAME"
 
             # Create a Pull Request using GitHub API
-            PR_TITLE="chore: update ${IMAGE_NAME} base image to ${NEW_TAG}"
-            PR_BODY="Automated PR raised by Docker Security CI pipeline.\n\nUpdates the base image in \`${DOCKERFILE_PATH}\` to:\n\`\`\`\n${NEW_IMAGE}\n\`\`\`"
+            PR_TITLE="updating new base image version - ${IMAGE_NAME}"
+            PR_BODY="Automated PR raised by Docker Security CI pipeline.\n\nUpdating new base image version - ${IMAGE_NAME}\n\nNew image:\n\`\`\`\n${NEW_IMAGE}\n\`\`\`"
 
             PR_RESPONSE=$(curl -s -X POST \
               -H "Authorization: token ${PAT_TOKEN}" \
@@ -303,14 +303,17 @@ jobs:
                 '{title: $title, body: $body, head: $head, base: $base}')")
 
             PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
+            REVIEWERS=$(echo "$entry" | jq -c '.reviewers // []')
             if [ "$PR_NUMBER" != "null" ] && [ -n "$PR_NUMBER" ]; then
-              echo "PR #$PR_NUMBER created. Adding reviewer..."
-              curl -s -X POST \
-                -H "Authorization: token ${PAT_TOKEN}" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}/requested_reviewers" \
-                -d '{"reviewers": ["Ajay-2702"]}'
-              echo "Reviewer Ajay-2702 added to PR #$PR_NUMBER"
+              echo "PR #$PR_NUMBER created."
+              if [ "$REVIEWERS" != "[]" ]; then
+                echo "Adding reviewers: $REVIEWERS"
+                curl -s -X POST \
+                  -H "Authorization: token ${PAT_TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}/requested_reviewers" \
+                  -d "{\"reviewers\": $REVIEWERS}"
+              fi
             else
               echo "WARNING: Failed to create PR for $REPO. Response: $PR_RESPONSE"
             fi
