@@ -297,9 +297,59 @@ jobs:
             # Go back to workspace root before API calls
             cd "$WORKSPACE_ROOT"
 
+            # Build PR body with vulnerability report using a temp file
+            PR_BODY_FILE="/tmp/pr_body_${IMAGE_NAME}.txt"
+            cat > "$PR_BODY_FILE" << PRBODY_EOF
+            Automated PR raised by Docker Security CI pipeline.
+
+            Updating new base image version - ${IMAGE_NAME}
+
+            New image:
+            \`\`\`
+            ${NEW_IMAGE}
+            \`\`\`
+
+            ---
+
+            PRBODY_EOF
+
+            # Append vulnerability report
+            if [ -f "vuln-summary/${IMAGE_NAME}.json" ]; then
+              CRIT=$(jq -r '.critical' "vuln-summary/${IMAGE_NAME}.json")
+              HIGH=$(jq -r '.high' "vuln-summary/${IMAGE_NAME}.json")
+              TOTAL=$((CRIT + HIGH))
+              if [ "$TOTAL" -eq 0 ]; then
+                cat >> "$PR_BODY_FILE" << VULN_EOF
+            ## ✅ Base Image Vulnerability Report
+
+            **NO HIGH/CRITICAL VULNERABILITIES FOUND IN BASEIMAGE**
+            VULN_EOF
+              else
+                cat >> "$PR_BODY_FILE" << VULN_EOF
+            ## ⚠️ Base Image Vulnerability Report
+
+            | Severity | Count |
+            |----------|-------|
+            | 🔴 Critical | ${CRIT} |
+            | 🟠 High | ${HIGH} |
+            | **Total** | **${TOTAL}** |
+
+            > These are OS-level vulnerabilities remaining after Copa auto-patching.
+            VULN_EOF
+              fi
+            else
+              echo "No scan data available for this image." >> "$PR_BODY_FILE"
+            fi
+
+            # Remove leading whitespace from heredoc
+            sed -i 's/^            //' "$PR_BODY_FILE"
+
+            echo "PR body content:"
+            cat "$PR_BODY_FILE"
+
             # Create a Pull Request using GitHub API
             PR_TITLE="updating new base image version - ${IMAGE_NAME}"
-            PR_BODY=$(printf "Automated PR raised by Docker Security CI pipeline.\n\nUpdating new base image version - ${IMAGE_NAME}\n\nNew image:\n\`\`\`\n${NEW_IMAGE}\n\`\`\`")
+            PR_BODY=$(cat "$PR_BODY_FILE")
 
             PR_RESPONSE=$(curl -s -X POST \
               -H "Authorization: token ${PAT_TOKEN}" \
@@ -312,12 +362,10 @@ jobs:
                 --arg base "$TARGET_BRANCH" \
                 '{title: $title, body: $body, head: $head, base: $base}')")
 
-            echo "PR API Response: $PR_RESPONSE"
-
             PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
             REVIEWERS=$(echo "$entry" | jq -c '.reviewers // []')
             if [ "$PR_NUMBER" != "null" ] && [ -n "$PR_NUMBER" ]; then
-              echo "PR #$PR_NUMBER created."
+              echo "PR #$PR_NUMBER created for $REPO ($IMAGE_NAME)"
 
               # Add reviewers
               if [ "$REVIEWERS" != "[]" ]; then
@@ -327,32 +375,6 @@ jobs:
                   -H "Accept: application/vnd.github+json" \
                   "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}/requested_reviewers" \
                   -d "{\"reviewers\": $REVIEWERS}"
-              fi
-
-              # Post vulnerability summary as PR comment
-              VULN_FILE="vuln-summary/${IMAGE_NAME}.json"
-              echo "Looking for vuln file: $VULN_FILE"
-              ls -la vuln-summary/ || echo "vuln-summary directory not found"
-              if [ -f "$VULN_FILE" ]; then
-                CRIT=$(jq -r '.critical' "$VULN_FILE")
-                HIGH=$(jq -r '.high' "$VULN_FILE")
-                TOTAL=$((CRIT + HIGH))
-
-                if [ "$TOTAL" -eq 0 ]; then
-                  COMMENT=$(printf "## ✅ Base Image Vulnerability Report - \`${IMAGE_NAME}\`\n\n**NO HIGH/CRITICAL VULNERABILITIES FOUND IN BASEIMAGE**\n\nImage: \`${NEW_IMAGE}\`")
-                else
-                  COMMENT=$(printf "## ⚠️ Base Image Vulnerability Report - \`${IMAGE_NAME}\`\n\n| Severity | Count |\n|----------|-------|\n| 🔴 Critical | ${CRIT} |\n| 🟠 High | ${HIGH} |\n| **Total** | **${TOTAL}** |\n\nImage: \`${NEW_IMAGE}\`\n\n> These are **OS-level vulnerabilities** remaining after Copa auto-patching. Library vulnerabilities require updating application dependencies.")
-                fi
-
-                echo "Posting comment to PR #$PR_NUMBER..."
-                COMMENT_RESPONSE=$(curl -s -X POST \
-                  -H "Authorization: token ${PAT_TOKEN}" \
-                  -H "Accept: application/vnd.github+json" \
-                  "https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments" \
-                  -d "$(jq -n --arg body "$COMMENT" '{body: $body}')")
-                echo "Comment API Response: $COMMENT_RESPONSE"
-              else
-                echo "WARNING: No vuln-summary found for $IMAGE_NAME at $VULN_FILE"
               fi
             else
               echo "WARNING: Failed to create PR for $REPO. Response: $PR_RESPONSE"
